@@ -50,6 +50,7 @@ class AsyncTransactionSenderMixin:
         function_call,
         value: int = 0,
         access_list: Optional[list[dict]] = None,
+        gas_price: Optional[int] = None,
     ) -> str:
         """Build, sign, and send a transaction to the blockchain.
 
@@ -73,7 +74,8 @@ class AsyncTransactionSenderMixin:
             )
 
             # Get gas price
-            gas_price = await self.w3.eth.gas_price
+            if gas_price is None:
+                gas_price = await self.w3.eth.gas_price
 
             # Build transaction parameters
             tx_params = {

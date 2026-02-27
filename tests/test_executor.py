@@ -79,7 +79,7 @@ async def test_place_order_converts_decimal_and_rounds_prices(monkeypatch):
     assert captured_payload["sellPrices"] == [130]
     assert captured_payload["buySizes"] == [400]
     assert captured_payload["sellSizes"] == [600]
-    executor._send_transaction.assert_awaited_once_with(function_call, access_list=[])
+    executor._send_transaction.assert_awaited_once_with(function_call, access_list=[], gas_price=None)
 
 
 @pytest.mark.asyncio

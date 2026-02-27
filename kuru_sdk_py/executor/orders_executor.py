@@ -193,7 +193,7 @@ class OrdersExecutor(AsyncTransactionSenderMixin):
 
     # _send_transaction is inherited from AsyncTransactionSenderMixin
 
-    async def place_batch(self, request: BatchOrderRequest) -> str:
+    async def place_batch(self, request: BatchOrderRequest, gas_price: Optional[int] = None) -> str:
         """Place a batch order from a structured batch request."""
         return await self.place_order(
             buy_cloids=request.buy_cloids,
@@ -207,6 +207,7 @@ class OrdersExecutor(AsyncTransactionSenderMixin):
             orders_to_cancel_metadata=request.orders_to_cancel_metadata,
             post_only=request.post_only,
             price_rounding=request.price_rounding,
+            gas_price=gas_price,
         )
 
     async def place_order(
@@ -222,6 +223,7 @@ class OrdersExecutor(AsyncTransactionSenderMixin):
         orders_to_cancel_metadata: list[tuple[int, int, bool]],
         post_only: bool,
         price_rounding: Optional[str] = "default",
+        gas_price: Optional[int] = None,
     ) -> str:
         """
         Deprecated: use place_batch(BatchOrderRequest) for new code.
@@ -371,12 +373,12 @@ class OrdersExecutor(AsyncTransactionSenderMixin):
                 f"{len(buy_prices)} buys, {len(sell_prices)} sells"
             )
 
-        txhash = await self._send_transaction(function_call, access_list=access_list)
+        txhash = await self._send_transaction(function_call, access_list=access_list, gas_price=gas_price)
 
         return txhash
 
     async def cancel_orders_with_kuru_order_ids(
-        self, kuru_order_ids: list[int] | list[tuple[int, int, bool]]
+        self, kuru_order_ids: list[int] | list[tuple[int, int, bool]], gas_price: Optional[int] = None
     ) -> str:
         """
         Cancel orders with Kuru order IDs using batchUpdate.
@@ -422,7 +424,7 @@ class OrdersExecutor(AsyncTransactionSenderMixin):
             logger.debug(f"Built access list for {len(order_ids)} order cancellations")
 
         # Send transaction (with or without access list)
-        txhash = await self._send_transaction(function_call, access_list=access_list)
+        txhash = await self._send_transaction(function_call, access_list=access_list, gas_price=gas_price)
 
         # Wait for confirmation
         await self._wait_for_transaction_receipt(txhash)
@@ -435,6 +437,7 @@ class OrdersExecutor(AsyncTransactionSenderMixin):
         min_amount_out: Decimal,
         is_margin: bool = True,
         is_fill_or_kill: bool = False,
+        gas_price: Optional[int] = None,
     ) -> str:
         """
         Place a market buy order using the orderbook contract's placeAndExecuteMarketBuy function.
@@ -479,7 +482,7 @@ class OrdersExecutor(AsyncTransactionSenderMixin):
             is_fill_or_kill,
         )
 
-        txhash = await self._send_transaction(function_call)
+        txhash = await self._send_transaction(function_call, gas_price=gas_price)
 
         return txhash
 
@@ -489,6 +492,7 @@ class OrdersExecutor(AsyncTransactionSenderMixin):
         min_amount_out: Decimal,
         is_margin: bool = True,
         is_fill_or_kill: bool = False,
+        gas_price: Optional[int] = None,
     ) -> str:
         """
         Place a market sell order using the orderbook contract's placeAndExecuteMarketSell function.
@@ -531,7 +535,7 @@ class OrdersExecutor(AsyncTransactionSenderMixin):
             is_fill_or_kill,
         )
 
-        txhash = await self._send_transaction(function_call)
+        txhash = await self._send_transaction(function_call, gas_price=gas_price)
 
         return txhash
 

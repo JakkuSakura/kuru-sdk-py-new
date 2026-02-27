@@ -459,6 +459,7 @@ class KuruClient:
         orders: list[Order],
         post_only: Optional[bool] = None,
         price_rounding: Optional[str] = "default",
+        gas_price: Optional[int] = None,
     ) -> str:
         """
         Place orders on the market.
@@ -499,7 +500,7 @@ class KuruClient:
             order.update_status(OrderStatus.ORDER_SENT)
             self.orders_manager.cloid_to_order[order.cloid] = order
 
-        txhash = await self.executor.place_batch(request)
+        txhash = await self.executor.place_batch(request, gas_price=gas_price)
 
         all_orders = orders_to_register + request.cancel_orders
 
@@ -525,6 +526,7 @@ class KuruClient:
         min_amount_out: Decimal,
         is_margin: bool = True,
         is_fill_or_kill: bool = False,
+        gas_price: Optional[int] = None,
     ) -> str:
         """
         Place a market buy order.
@@ -542,7 +544,7 @@ class KuruClient:
             Transaction hash as hex string
         """
         txhash = await self.executor.place_market_buy(
-            quote_amount, min_amount_out, is_margin, is_fill_or_kill
+            quote_amount, min_amount_out, is_margin, is_fill_or_kill, gas_price=gas_price
         )
 
         # Add to pending transactions cache
@@ -556,6 +558,7 @@ class KuruClient:
         min_amount_out: Decimal,
         is_margin: bool = True,
         is_fill_or_kill: bool = False,
+        gas_price: Optional[int] = None,
     ) -> str:
         """
         Place a market sell order.
@@ -573,7 +576,7 @@ class KuruClient:
             Transaction hash as hex string
         """
         txhash = await self.executor.place_market_sell(
-            size, min_amount_out, is_margin, is_fill_or_kill
+            size, min_amount_out, is_margin, is_fill_or_kill, gas_price=gas_price
         )
 
         # Add to pending transactions cache
@@ -582,7 +585,7 @@ class KuruClient:
         return txhash
 
     async def cancel_all_active_orders_for_market(
-        self, use_access_list: Optional[bool] = None
+        self, use_access_list: Optional[bool] = None, gas_price: Optional[int] = None
     ) -> None:
         """
         Cancel all active orders for the market.
@@ -641,7 +644,7 @@ class KuruClient:
 
             # Cancel orders - executor will detect format and handle appropriately
             txhash = await self.executor.cancel_orders_with_kuru_order_ids(
-                orders_to_cancel
+                orders_to_cancel, gas_price=gas_price
             )
             logger.success(
                 f"Cancelled {len(orders_to_cancel)} orders with txhash: {txhash}"
