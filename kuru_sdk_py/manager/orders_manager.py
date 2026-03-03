@@ -572,7 +572,6 @@ class OrdersManager:
         )
 
 
-
         # Clear pending transaction — events arrived successfully
         await self.pending_transactions.delete(txhash)
 
