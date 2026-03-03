@@ -571,20 +571,7 @@ class OrdersManager:
             sell_cloids, orders_created_for_txhash.sell_orders, "sell"
         )
 
-        # Verify if the cloids are cancelled
-        for cancel_cloid in cancel_cloids:
-            order = self.cloid_to_order.get(cancel_cloid)
-            if order is None:
-                logger.warning(
-                    f"Cloid {cancel_cloid} not found in cloid_to_order mapping"
-                )
-                continue
 
-            if order.status != OrderStatus.ORDER_CANCELLED:
-                logger.debug(
-                    f"Cloid {cancel_cloid} is not cancelled, current order status is {order.status}"
-                )
-                continue
 
         # Clear pending transaction — events arrived successfully
         await self.pending_transactions.delete(txhash)
