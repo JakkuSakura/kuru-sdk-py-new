@@ -51,18 +51,21 @@ async def main():
     # Initialize configs using ConfigManager
     logger.info("Loading configuration...")
 
+    # Load TOML config (optional — falls back silently if config.toml missing)
+    toml_config = ConfigManager.load_toml_config()
+
     # Wallet config (loads PRIVATE_KEY from .env)
     wallet_config = ConfigManager.load_wallet_config()
     logger.info(f"Wallet: {wallet_config.user_address}")
 
-    # Connection config (loads RPC URLs from .env or uses defaults)
-    connection_config = ConfigManager.load_connection_config()
+    # Connection config (loads from config.toml, then env vars, then defaults)
+    connection_config = ConfigManager.load_connection_config(toml_config=toml_config)
     logger.info(f"RPC: {connection_config.rpc_url}")
 
-    # Market config (fetches from blockchain)
+    # Market config (fetches from blockchain; market_address from config.toml or env)
     market_config = ConfigManager.load_market_config(
-        market_address=os.getenv("MARKET_ADDRESS", "0x6eB96A614E49b0dAc69F48E799C5C825AF9B33fA"),
         fetch_from_chain=True,  # Automatically fetch token info, decimals, precision
+        toml_config=toml_config,
     )
     logger.info(f"Market: {market_config.market_symbol}")
 

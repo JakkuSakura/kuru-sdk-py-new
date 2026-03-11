@@ -3,11 +3,13 @@ from unittest.mock import MagicMock, patch
 from web3 import Web3
 import pytest
 from kuru_sdk_py.configs import (
+    ConfigManager,
     MarketConfig,
     KuruMMConfig,
     initialize_kuru_mm_config,
     market_config_from_market_address,
 )
+from kuru_sdk_py.exceptions import KuruConfigError
 
 
 class TestInitializeKuruMMConfig:
@@ -90,3 +92,77 @@ class TestMarketConfigFromMarketAddress:
         assert len(config.quote_symbol) > 0
 
         assert config.market_symbol == f"{config.base_symbol}-{config.quote_symbol}"
+
+
+class TestLoadTomlConfig:
+    def test_load_toml_config_missing_file(self, tmp_path):
+        """Returns empty dict when file doesn't exist."""
+        result = ConfigManager.load_toml_config(str(tmp_path / "nonexistent.toml"))
+        assert result == {}
+
+    def test_load_toml_config_valid(self, tmp_path):
+        """Parses a valid TOML file correctly."""
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_text(
+            '[connection]\nrpc_url = "https://my-rpc.example.com"\n'
+            '[transaction]\ntimeout = 60\n'
+        )
+        result = ConfigManager.load_toml_config(str(toml_file))
+        assert result["connection"]["rpc_url"] == "https://my-rpc.example.com"
+        assert result["transaction"]["timeout"] == 60
+
+    def test_load_toml_config_invalid(self, tmp_path):
+        """Raises KuruConfigError for a malformed TOML file."""
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_bytes(b"[invalid\nthis is not valid toml ===")
+        with pytest.raises(KuruConfigError, match="Failed to parse config file"):
+            ConfigManager.load_toml_config(str(toml_file))
+
+    def test_connection_config_toml_priority(self, tmp_path):
+        """TOML values are applied when no env vars or explicit args override."""
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_text('[connection]\nrpc_url = "https://toml-rpc.example.com"\n')
+        toml_config = ConfigManager.load_toml_config(str(toml_file))
+
+        # Clear env so TOML wins
+        with patch.dict(os.environ, {}, clear=True):
+            config = ConfigManager.load_connection_config(auto_env=True, toml_config=toml_config)
+        assert config.rpc_url == "https://toml-rpc.example.com"
+
+    def test_env_overrides_toml(self, tmp_path):
+        """Environment variable wins over TOML."""
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_text('[connection]\nrpc_url = "https://toml-rpc.example.com"\n')
+        toml_config = ConfigManager.load_toml_config(str(toml_file))
+
+        with patch.dict(os.environ, {"RPC_URL": "https://env-rpc.example.com"}):
+            config = ConfigManager.load_connection_config(auto_env=True, toml_config=toml_config)
+        assert config.rpc_url == "https://env-rpc.example.com"
+
+    def test_explicit_arg_overrides_toml(self, tmp_path):
+        """Explicit function argument wins over TOML and env var."""
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_text('[connection]\nrpc_url = "https://toml-rpc.example.com"\n')
+        toml_config = ConfigManager.load_toml_config(str(toml_file))
+
+        with patch.dict(os.environ, {"RPC_URL": "https://env-rpc.example.com"}):
+            config = ConfigManager.load_connection_config(
+                rpc_url="https://explicit-rpc.example.com",
+                auto_env=True,
+                toml_config=toml_config,
+            )
+        assert config.rpc_url == "https://explicit-rpc.example.com"
+
+    def test_order_execution_toml_bool_native(self, tmp_path):
+        """Native TOML booleans are handled correctly for order execution config."""
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_text(
+            '[order_execution]\npost_only = false\nauto_approve = true\nuse_access_list = false\n'
+        )
+        toml_config = ConfigManager.load_toml_config(str(toml_file))
+
+        with patch.dict(os.environ, {}, clear=True):
+            config = ConfigManager.load_order_execution_config(auto_env=True, toml_config=toml_config)
+        assert config.post_only is False
+        assert config.auto_approve is True
+        assert config.use_access_list is False

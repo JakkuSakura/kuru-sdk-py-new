@@ -1,0 +1,47 @@
+# config.toml.example — copy to config.toml and edit.
+# Secrets (PRIVATE_KEY) stay in .env, NOT here.
+#
+# Priority chain: explicit function args > environment variables > config.toml > built-in defaults
+# Environment variables always override values set here.
+
+[market]
+market_address = "0x065C9d28E428A0db40191a54d33d5b7c71a9C394"
+# mm_entrypoint_address = "0xd63aD20884aFA6281969b2BD21A8708Eed546fAC"
+# margin_contract_address = "0x2A68ba1833cDf93fa9Da1EEbd7F46242aD8E90c5"
+
+[connection]
+rpc_url = "https://rpc.monad.xyz"
+rpc_ws_url = "wss://rpc.monad.xyz"
+kuru_ws_url = "wss://ws.kuru.io/"
+kuru_api_url = "https://api.kuru.io/"
+
+[transaction]
+timeout = 120
+poll_latency = 0.4
+gas_adjustment_per_slot = 6500
+gas_buffer_multiplier = 1.35
+gas_buffer = 40000
+
+[websocket]
+max_reconnect_attempts = 5
+reconnect_delay = 1.0
+heartbeat_interval = 30.0
+heartbeat_timeout = 10.0
+rpc_logs_subscription = "monadLogs"
+rpc_ws_max_reconnect_attempts = 0
+rpc_ws_reconnect_delay = 1.0
+rpc_ws_max_reconnect_delay = 30.0
+gap_recovery_block_buffer = 5
+gap_recovery_max_block_range = 2000
+
+[order_execution]
+post_only = true
+auto_approve = true
+use_access_list = true
+
+[cache]
+pending_tx_ttl = 5.0
+trade_events_ttl = 5.0
+check_interval = 1.0
+reconciliation_interval = 3.0
+reconciliation_threshold = 5.0

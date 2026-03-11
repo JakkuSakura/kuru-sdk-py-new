@@ -77,18 +77,21 @@ async def main():
     # The ConfigManager automatically loads from environment variables (.env file)
     # and uses sensible defaults. You can override any value explicitly.
 
+    # Load TOML config (optional — falls back silently if config.toml missing)
+    toml_config = ConfigManager.load_toml_config()
+
     # Wallet config (loads PRIVATE_KEY from .env)
     wallet_config = ConfigManager.load_wallet_config()
     logger.info(f"Wallet: {wallet_config.user_address}")
 
-    # Connection config (loads RPC URLs from .env or uses defaults)
-    connection_config = ConfigManager.load_connection_config()
+    # Connection config (loads from config.toml, then env vars, then defaults)
+    connection_config = ConfigManager.load_connection_config(toml_config=toml_config)
     logger.info(f"RPC: {connection_config.rpc_url}")
 
-    # Market config (fetches from blockchain)
+    # Market config (fetches from blockchain; market_address from config.toml or env)
     market_config = ConfigManager.load_market_config(
-        market_address=os.getenv("MARKET_ADDRESS", "0x065c9d28e428a0db40191a54d33d5b7c71a9c394"),
         fetch_from_chain=True,  # Fetch token info, decimals, precision from chain
+        toml_config=toml_config,
     )
     logger.info(f"Market: {market_config.market_symbol}")
 

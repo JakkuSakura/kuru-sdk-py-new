@@ -520,6 +520,41 @@ class ConfigManager:
     # ========================================================================
 
     @staticmethod
+    def load_toml_config(path: str = "config.toml") -> dict:
+        """
+        Load configuration from a TOML file.
+
+        Returns empty dict if file doesn't exist (TOML is optional).
+        Raises KuruConfigError if file exists but is malformed.
+
+        Args:
+            path: Path to the TOML config file
+
+        Returns:
+            Parsed TOML content as dict, or {} if file doesn't exist
+
+        Raises:
+            KuruConfigError: If file exists but cannot be parsed
+        """
+        import os
+
+        if not os.path.exists(path):
+            return {}
+
+        try:
+            try:
+                import tomllib  # Python 3.11+
+            except ImportError:
+                import tomli as tomllib  # type: ignore[no-redef]
+
+            with open(path, "rb") as f:
+                return tomllib.load(f)
+        except Exception as e:
+            raise KuruConfigError(
+                f"Failed to parse config file at '{path}': {e}"
+            ) from e
+
+    @staticmethod
     def load_wallet_config(
         private_key: Optional[str] = None,
         auto_env: bool = True,
@@ -573,6 +608,7 @@ class ConfigManager:
         kuru_api_url: Optional[str] = None,
         exchange_ws_url: Optional[str] = None,
         auto_env: bool = True,
+        toml_config: Optional[dict] = None,
     ) -> ConnectionConfig:
         """
         Load connection config with defaults.
@@ -606,6 +642,20 @@ class ConfigManager:
 
         # Layer 1: Defaults (from dataclass defaults)
         config_dict = {}
+
+        # Layer 1.5: TOML config (overrides defaults, overridden by env vars)
+        if toml_config:
+            section = toml_config.get("connection", {})
+            if "rpc_url" in section:
+                config_dict["rpc_url"] = section["rpc_url"]
+            if "rpc_ws_url" in section:
+                config_dict["rpc_ws_url"] = section["rpc_ws_url"]
+            if "kuru_ws_url" in section:
+                config_dict["kuru_ws_url"] = section["kuru_ws_url"]
+            if "kuru_api_url" in section:
+                config_dict["kuru_api_url"] = section["kuru_api_url"]
+            if "exchange_ws_url" in section:
+                config_dict["exchange_ws_url"] = section["exchange_ws_url"]
 
         # Layer 2: Environment variables
         if auto_env:
@@ -652,6 +702,7 @@ class ConfigManager:
         orderbook_implementation: Optional[str] = None,
         margin_account_implementation: Optional[str] = None,
         auto_env: bool = True,
+        toml_config: Optional[dict] = None,
         **kwargs
     ) -> MarketConfig:
         """
@@ -695,9 +746,28 @@ class ConfigManager:
             ENV_MARKET_ADDRESS, ENV_MM_ENTRYPOINT_ADDRESS, ENV_MARGIN_CONTRACT_ADDRESS
         )
 
-        # Load market_address from env if needed
-        if auto_env and market_address is None:
-            market_address = os.getenv(ENV_MARKET_ADDRESS)
+        # Track whether values were provided as explicit args
+        _explicit_market_address = market_address is not None
+
+        # Layer 1.5: TOML config (only applies when no explicit arg provided)
+        if toml_config and not _explicit_market_address:
+            section = toml_config.get("market", {})
+            if "market_address" in section:
+                market_address = section["market_address"]
+            if mm_entrypoint_address is None:
+                mm_entrypoint_address = section.get("mm_entrypoint_address")
+            if margin_contract_address is None:
+                margin_contract_address = section.get("margin_contract_address")
+            if orderbook_implementation is None:
+                orderbook_implementation = section.get("orderbook_implementation")
+            if margin_account_implementation is None:
+                margin_account_implementation = section.get("margin_account_implementation")
+
+        # Load market_address from env if needed (env overrides TOML)
+        if auto_env and not _explicit_market_address:
+            env_addr = os.getenv(ENV_MARKET_ADDRESS)
+            if env_addr:
+                market_address = env_addr
 
         if not market_address:
             raise KuruConfigError(
@@ -746,6 +816,7 @@ class ConfigManager:
         gas_buffer_multiplier: Optional[float] = None,
         gas_buffer: Optional[int] = None,
         auto_env: bool = True,
+        toml_config: Optional[dict] = None,
     ) -> TransactionConfig:
         """
         Load transaction config with defaults.
@@ -778,6 +849,20 @@ class ConfigManager:
         )
 
         config_dict = {}
+
+        # Layer 1.5: TOML config
+        if toml_config:
+            section = toml_config.get("transaction", {})
+            if "timeout" in section:
+                config_dict["timeout"] = int(section["timeout"])
+            if "poll_latency" in section:
+                config_dict["poll_latency"] = float(section["poll_latency"])
+            if "gas_adjustment_per_slot" in section:
+                config_dict["gas_adjustment_per_slot"] = int(section["gas_adjustment_per_slot"])
+            if "gas_buffer_multiplier" in section:
+                config_dict["gas_buffer_multiplier"] = float(section["gas_buffer_multiplier"])
+            if "gas_buffer" in section:
+                config_dict["gas_buffer"] = int(section["gas_buffer"])
 
         # Load from environment
         if auto_env:
@@ -820,6 +905,7 @@ class ConfigManager:
         gap_recovery_block_buffer: Optional[int] = None,
         gap_recovery_max_block_range: Optional[int] = None,
         auto_env: bool = True,
+        toml_config: Optional[dict] = None,
     ) -> WebSocketConfig:
         """
         Load WebSocket config with defaults.
@@ -861,6 +947,30 @@ class ConfigManager:
         )
 
         config_dict = {}
+
+        # Layer 1.5: TOML config
+        if toml_config:
+            section = toml_config.get("websocket", {})
+            if "max_reconnect_attempts" in section:
+                config_dict["max_reconnect_attempts"] = int(section["max_reconnect_attempts"])
+            if "reconnect_delay" in section:
+                config_dict["reconnect_delay"] = float(section["reconnect_delay"])
+            if "heartbeat_interval" in section:
+                config_dict["heartbeat_interval"] = float(section["heartbeat_interval"])
+            if "heartbeat_timeout" in section:
+                config_dict["heartbeat_timeout"] = float(section["heartbeat_timeout"])
+            if "rpc_logs_subscription" in section:
+                config_dict["rpc_logs_subscription"] = section["rpc_logs_subscription"]
+            if "rpc_ws_max_reconnect_attempts" in section:
+                config_dict["rpc_ws_max_reconnect_attempts"] = int(section["rpc_ws_max_reconnect_attempts"])
+            if "rpc_ws_reconnect_delay" in section:
+                config_dict["rpc_ws_reconnect_delay"] = float(section["rpc_ws_reconnect_delay"])
+            if "rpc_ws_max_reconnect_delay" in section:
+                config_dict["rpc_ws_max_reconnect_delay"] = float(section["rpc_ws_max_reconnect_delay"])
+            if "gap_recovery_block_buffer" in section:
+                config_dict["gap_recovery_block_buffer"] = int(section["gap_recovery_block_buffer"])
+            if "gap_recovery_max_block_range" in section:
+                config_dict["gap_recovery_max_block_range"] = int(section["gap_recovery_max_block_range"])
 
         # Load from environment
         if auto_env:
@@ -929,6 +1039,7 @@ class ConfigManager:
         auto_approve: Optional[bool] = None,
         use_access_list: Optional[bool] = None,
         auto_env: bool = True,
+        toml_config: Optional[dict] = None,
     ) -> OrderExecutionConfig:
         """
         Load order execution config with defaults.
@@ -955,6 +1066,16 @@ class ConfigManager:
         from kuru_sdk_py.utils.validation import validate_boolean_env
 
         config_dict = {}
+
+        # Layer 1.5: TOML config (native Python bool, no string parsing needed)
+        if toml_config:
+            section = toml_config.get("order_execution", {})
+            if "post_only" in section:
+                config_dict["post_only"] = bool(section["post_only"])
+            if "auto_approve" in section:
+                config_dict["auto_approve"] = bool(section["auto_approve"])
+            if "use_access_list" in section:
+                config_dict["use_access_list"] = bool(section["use_access_list"])
 
         # Load from environment
         if auto_env:
@@ -983,6 +1104,7 @@ class ConfigManager:
         reconciliation_interval: Optional[float] = None,
         reconciliation_threshold: Optional[float] = None,
         auto_env: bool = False,  # Advanced users only
+        toml_config: Optional[dict] = None,
     ) -> CacheConfig:
         """
         Load cache config with defaults.
@@ -1017,6 +1139,20 @@ class ConfigManager:
 
         config_dict = {}
 
+        # Layer 1.5: TOML config
+        if toml_config:
+            section = toml_config.get("cache", {})
+            if "pending_tx_ttl" in section:
+                config_dict["pending_tx_ttl"] = float(section["pending_tx_ttl"])
+            if "trade_events_ttl" in section:
+                config_dict["trade_events_ttl"] = float(section["trade_events_ttl"])
+            if "check_interval" in section:
+                config_dict["check_interval"] = float(section["check_interval"])
+            if "reconciliation_interval" in section:
+                config_dict["reconciliation_interval"] = float(section["reconciliation_interval"])
+            if "reconciliation_threshold" in section:
+                config_dict["reconciliation_threshold"] = float(section["reconciliation_threshold"])
+
         # Load from environment (only if enabled)
         if auto_env:
             if env_tx_ttl := os.getenv(ENV_PENDING_TX_TTL):
@@ -1049,6 +1185,7 @@ class ConfigManager:
         market_address: Optional[str] = None,
         fetch_from_chain: bool = True,
         auto_env: bool = True,
+        toml_path: str = "config.toml",
         **overrides
     ) -> dict:
         """
@@ -1079,18 +1216,20 @@ class ConfigManager:
             )
             client = await KuruClient.create(**configs)
         """
+        toml_config = ConfigManager.load_toml_config(toml_path)
         return {
             "wallet_config": ConfigManager.load_wallet_config(auto_env=auto_env),
-            "connection_config": ConfigManager.load_connection_config(auto_env=auto_env),
+            "connection_config": ConfigManager.load_connection_config(auto_env=auto_env, toml_config=toml_config),
             "market_config": ConfigManager.load_market_config(
                 market_address=market_address,
                 fetch_from_chain=fetch_from_chain,
-                auto_env=auto_env
+                auto_env=auto_env,
+                toml_config=toml_config,
             ),
-            "transaction_config": ConfigManager.load_transaction_config(auto_env=auto_env),
-            "websocket_config": ConfigManager.load_websocket_config(auto_env=auto_env),
-            "order_execution_config": ConfigManager.load_order_execution_config(auto_env=auto_env),
-            "cache_config": ConfigManager.load_cache_config(auto_env=False),  # Advanced only
+            "transaction_config": ConfigManager.load_transaction_config(auto_env=auto_env, toml_config=toml_config),
+            "websocket_config": ConfigManager.load_websocket_config(auto_env=auto_env, toml_config=toml_config),
+            "order_execution_config": ConfigManager.load_order_execution_config(auto_env=auto_env, toml_config=toml_config),
+            "cache_config": ConfigManager.load_cache_config(auto_env=False, toml_config=toml_config),
         }
 
 
