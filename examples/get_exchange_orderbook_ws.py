@@ -75,7 +75,6 @@ async def main():
     # Load market configuration (uses MARKET_ADDRESS env var)
     market_config = ConfigManager.load_market_config(
         market_address=os.getenv("MARKET_ADDRESS"),
-        fetch_from_chain=True,
     )
 
     # Create queue for orderbook updates

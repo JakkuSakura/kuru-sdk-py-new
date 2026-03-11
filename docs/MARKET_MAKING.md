@@ -86,7 +86,6 @@ wallet_config = ConfigManager.load_wallet_config()
 connection_config = ConfigManager.load_connection_config()
 market_config = ConfigManager.load_market_config(
     market_address=os.environ["MARKET_ADDRESS"],
-    fetch_from_chain=True,
 )
 
 client = await KuruClient.create(
@@ -96,7 +95,7 @@ client = await KuruClient.create(
 )
 ```
 
-### What `fetch_from_chain=True` gives you
+### What on-chain market loading gives you
 
 The SDK reads the market’s on-chain params and sets:
 

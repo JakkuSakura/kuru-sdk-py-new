@@ -61,7 +61,6 @@ def get_market_config(market_address: str, rpc_url: Optional[str] = None) -> Mar
     # Unknown market - fetch from chain
     return ConfigManager.load_market_config(
         market_address=normalized,
-        fetch_from_chain=True,
         rpc_url=rpc_url or CONSTANTS.DEFAULT_RPC_URL,
     )
 

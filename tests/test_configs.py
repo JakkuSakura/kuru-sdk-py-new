@@ -166,3 +166,145 @@ class TestLoadTomlConfig:
         assert config.post_only is False
         assert config.auto_approve is True
         assert config.use_access_list is False
+
+
+class TestLoadMarketConfig:
+    def test_load_market_config_fetches_from_chain_with_resolved_inputs(self, monkeypatch):
+        toml_config = {
+            "market": {
+                "market_address": "0x00000000000000000000000000000000000000AA",
+                "mm_entrypoint_address": "0x00000000000000000000000000000000000000BB",
+                "margin_contract_address": "0x00000000000000000000000000000000000000CC",
+                "orderbook_implementation": "0x00000000000000000000000000000000000000DD",
+                "margin_account_implementation": "0x00000000000000000000000000000000000000EE",
+            }
+        }
+        captured = {}
+        expected = MagicMock(spec=MarketConfig)
+
+        def fake_market_config_from_market_address(**kwargs):
+            captured.update(kwargs)
+            return expected
+
+        monkeypatch.setattr(
+            "kuru_sdk_py.configs.market_config_from_market_address",
+            fake_market_config_from_market_address,
+        )
+
+        with patch.dict(
+            os.environ,
+            {"MARKET_ADDRESS": "0x00000000000000000000000000000000000000FF"},
+            clear=True,
+        ):
+            result = ConfigManager.load_market_config(
+                rpc_url="https://explicit-rpc.example.com",
+                auto_env=True,
+                toml_config=toml_config,
+            )
+
+        assert result is expected
+        assert captured == {
+            "market_address": "0x00000000000000000000000000000000000000FF",
+            "rpc_url": "https://explicit-rpc.example.com",
+            "mm_entrypoint_address": "0x00000000000000000000000000000000000000BB",
+            "margin_contract_address": "0x00000000000000000000000000000000000000CC",
+            "orderbook_implementation": "0x00000000000000000000000000000000000000DD",
+            "margin_account_implementation": "0x00000000000000000000000000000000000000EE",
+        }
+
+    def test_load_market_config_requires_market_address(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(KuruConfigError, match="market_address is required"):
+                ConfigManager.load_market_config(auto_env=True, toml_config={})
+
+
+class TestLoadAllConfigs:
+    def test_load_all_configs_returns_bundle_without_fetch_flag(self, monkeypatch):
+        toml_config = {"connection": {"rpc_url": "https://toml-rpc.example.com"}}
+        market_calls = []
+
+        monkeypatch.setattr(
+            ConfigManager,
+            "load_toml_config",
+            staticmethod(lambda path: toml_config),
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "load_wallet_config",
+            staticmethod(lambda auto_env=True: "wallet"),
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "load_connection_config",
+            staticmethod(lambda auto_env=True, toml_config=None: "connection"),
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "load_market_config",
+            staticmethod(
+                lambda market_address=None, rpc_url=None, mm_entrypoint_address=None,
+                margin_contract_address=None, orderbook_implementation=None,
+                margin_account_implementation=None, auto_env=True, toml_config=None: (
+                    market_calls.append(
+                        {
+                            "market_address": market_address,
+                            "rpc_url": rpc_url,
+                            "mm_entrypoint_address": mm_entrypoint_address,
+                            "margin_contract_address": margin_contract_address,
+                            "orderbook_implementation": orderbook_implementation,
+                            "margin_account_implementation": margin_account_implementation,
+                            "auto_env": auto_env,
+                            "toml_config": toml_config,
+                        }
+                    ) or "market"
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "load_transaction_config",
+            staticmethod(lambda auto_env=True, toml_config=None: "transaction"),
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "load_websocket_config",
+            staticmethod(lambda auto_env=True, toml_config=None: "websocket"),
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "load_order_execution_config",
+            staticmethod(lambda auto_env=True, toml_config=None: "order_execution"),
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "load_cache_config",
+            staticmethod(lambda auto_env=False, toml_config=None: "cache"),
+        )
+
+        configs = ConfigManager.load_all_configs(
+            market_address="0x0000000000000000000000000000000000000001",
+            auto_env=False,
+            toml_path="custom.toml",
+        )
+
+        assert configs == {
+            "wallet_config": "wallet",
+            "connection_config": "connection",
+            "market_config": "market",
+            "transaction_config": "transaction",
+            "websocket_config": "websocket",
+            "order_execution_config": "order_execution",
+            "cache_config": "cache",
+        }
+        assert market_calls == [
+            {
+                "market_address": "0x0000000000000000000000000000000000000001",
+                "rpc_url": None,
+                "mm_entrypoint_address": None,
+                "margin_contract_address": None,
+                "orderbook_implementation": None,
+                "margin_account_implementation": None,
+                "auto_env": False,
+                "toml_config": toml_config,
+            }
+        ]

@@ -90,7 +90,6 @@ async def main():
 
     # Market config (fetches from blockchain; market_address from config.toml or env)
     market_config = ConfigManager.load_market_config(
-        fetch_from_chain=True,  # Fetch token info, decimals, precision from chain
         toml_config=toml_config,
     )
     logger.info(f"Market: {market_config.market_symbol}")

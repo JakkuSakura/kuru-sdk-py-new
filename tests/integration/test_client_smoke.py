@@ -16,7 +16,6 @@ async def test_kuru_client_lifecycle_smoke(ensure_rpc_available, integration_rpc
 
     market_config = ConfigManager.load_market_config(
         market_address=market_address,
-        fetch_from_chain=True,
         rpc_url=integration_rpc_url,
         auto_env=False,
     )

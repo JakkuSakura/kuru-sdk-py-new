@@ -30,9 +30,15 @@ def _mock_market_config() -> MarketConfig:
 
 
 def test_client_config_to_configs(monkeypatch):
+    captured = {}
+
+    def fake_load_market_config(**kwargs):
+        captured.update(kwargs)
+        return _mock_market_config()
+
     monkeypatch.setattr(
         "kuru_sdk_py.configs.ConfigManager.load_market_config",
-        lambda **kwargs: _mock_market_config(),
+        fake_load_market_config,
     )
 
     config = ClientConfig(
@@ -54,3 +60,7 @@ def test_client_config_to_configs(monkeypatch):
     assert isinstance(transaction_config, TransactionConfig)
     assert isinstance(websocket_config, WebSocketConfig)
     assert isinstance(order_execution_config, OrderExecutionConfig)
+    assert captured == {
+        "market_address": "0x0000000000000000000000000000000000000001",
+        "rpc_url": "https://rpc.monad.xyz",
+    }

@@ -50,8 +50,7 @@ def example_1_simple_defaults():
     wallet_config = ConfigManager.load_wallet_config()
     connection_config = ConfigManager.load_connection_config()
     market_config = ConfigManager.load_market_config(
-        market_address=os.getenv("MARKET_ADDRESS"),
-        fetch_from_chain=True
+        market_address=os.getenv("MARKET_ADDRESS")
     )
 
     logger.info(f"✓ Wallet: {wallet_config.user_address}")
@@ -82,8 +81,7 @@ def example_2_custom_timeouts():
     wallet_config = ConfigManager.load_wallet_config()
     connection_config = ConfigManager.load_connection_config()
     market_config = ConfigManager.load_market_config(
-        market_address=os.getenv("MARKET_ADDRESS"),
-        fetch_from_chain=True
+        market_address=os.getenv("MARKET_ADDRESS")
     )
 
     # Override transaction config for slower network
@@ -131,7 +129,6 @@ def example_3_power_user():
     # Market config
     market_config = ConfigManager.load_market_config(
         market_address=os.getenv("MARKET_ADDRESS"),
-        fetch_from_chain=True,
         rpc_url=connection_config.rpc_url,  # Use custom RPC
     )
 
@@ -187,8 +184,7 @@ def example_4_presets():
     wallet_config = ConfigManager.load_wallet_config()
     connection_config = ConfigManager.load_connection_config()
     market_config = ConfigManager.load_market_config(
-        market_address=os.getenv("MARKET_ADDRESS"),
-        fetch_from_chain=True
+        market_address=os.getenv("MARKET_ADDRESS")
     )
 
     # Get conservative preset for production
@@ -229,7 +225,6 @@ def example_5_one_liner():
     # Load ALL configs at once
     configs = ConfigManager.load_all_configs(
         market_address=os.getenv("MARKET_ADDRESS"),
-        fetch_from_chain=True,
     )
 
     logger.info("✓ Loaded all configs in one call:")
@@ -360,7 +355,6 @@ def example_8_testnet():
 
     market_config = ConfigManager.load_market_config(
         market_address=os.getenv("TESTNET_MARKET_ADDRESS", "0x..."),
-        fetch_from_chain=True,
         rpc_url=connection_config.rpc_url,
     )
 

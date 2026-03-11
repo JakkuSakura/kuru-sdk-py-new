@@ -214,7 +214,6 @@ class ClientConfig:
     heartbeat_interval: float = DEFAULT_HEARTBEAT_INTERVAL
     heartbeat_timeout: float = DEFAULT_HEARTBEAT_TIMEOUT
     exchange_market_depth: str = DEFAULT_EXCHANGE_MARKET_DEPTH
-    fetch_market_from_chain: bool = True
 
     def to_configs(
         self,
@@ -237,7 +236,6 @@ class ClientConfig:
         wallet_config = WalletConfig(private_key=self.private_key)
         market_config = ConfigManager.load_market_config(
             market_address=self.market_address,
-            fetch_from_chain=self.fetch_market_from_chain,
             rpc_url=self.rpc_url,
         )
         transaction_config = TransactionConfig(
@@ -410,10 +408,10 @@ class KuruMMConfig:
 
 # Example market configs
 # Note: For production use, it's recommended to use ConfigManager.load_market_config()
-# with fetch_from_chain=True to automatically fetch current market parameters
+# to automatically fetch current market parameters from chain
 
 # MON_AUSD_MARKET - commented out due to placeholder addresses
-# Use ConfigManager.load_market_config(market_address="0x...", fetch_from_chain=True) instead
+# Use ConfigManager.load_market_config(market_address="0x...") instead
 # MON_AUSD_MARKET = MarketConfig(
 #     market_address="0x...",
 #     base_token="0x...",
@@ -450,7 +448,7 @@ MON_USDC_MARKET = MarketConfig(
 )
 
 # WBTC_AUSD_MARKET - commented out due to placeholder addresses
-# Use ConfigManager.load_market_config(market_address="0xed1448a8f1859970B2C96D184938690353E88330", fetch_from_chain=True) instead
+# Use ConfigManager.load_market_config(market_address="0xed1448a8f1859970B2C96D184938690353E88330") instead
 # WBTC_AUSD_MARKET = MarketConfig(
 #     market_address="0xed1448a8f1859970B2C96D184938690353E88330",
 #     base_token="0x...",
@@ -508,10 +506,9 @@ class ConfigManager:
             rpc_url="https://my-rpc.com"
         )
 
-        # Load market from chain
+        # Load market config from chain
         market = ConfigManager.load_market_config(
-            market_address="0x...",
-            fetch_from_chain=True
+            market_address="0x..."
         )
     """
 
@@ -695,7 +692,6 @@ class ConfigManager:
     @staticmethod
     def load_market_config(
         market_address: Optional[str] = None,
-        fetch_from_chain: bool = False,
         rpc_url: Optional[str] = None,
         mm_entrypoint_address: Optional[str] = None,
         margin_contract_address: Optional[str] = None,
@@ -703,42 +699,36 @@ class ConfigManager:
         margin_account_implementation: Optional[str] = None,
         auto_env: bool = True,
         toml_config: Optional[dict] = None,
-        **kwargs
     ) -> MarketConfig:
         """
-        Load market config with validation.
+        Load market config from chain with validation.
 
-        Priority: explicit args > fetch from chain > env vars > defaults
+        Priority: explicit args > env vars > TOML > defaults
 
         Args:
             market_address: Market contract address (required)
-            fetch_from_chain: Fetch market parameters from blockchain
             rpc_url: RPC URL for chain fetching (defaults to public RPC)
             mm_entrypoint_address: MM Entrypoint contract address
             margin_contract_address: Margin Account contract address
             orderbook_implementation: Orderbook implementation address
             margin_account_implementation: Margin Account implementation address
             auto_env: Automatically load from environment variables
-            **kwargs: Additional MarketConfig fields for direct construction
 
         Returns:
             MarketConfig instance
 
         Raises:
             ValueError: If market_address is not provided
-            ConnectionError: If fetch_from_chain=True and RPC is unreachable
+            ConnectionError: If RPC is unreachable
 
         Example:
-            # Fetch from chain
             market = ConfigManager.load_market_config(
-                market_address="0x065C9d28E428A0db40191a54d33d5b7c71a9C394",
-                fetch_from_chain=True
+                market_address="0x065C9d28E428A0db40191a54d33d5b7c71a9C394"
             )
 
             # From environment
             market = ConfigManager.load_market_config(
-                market_address=os.getenv("MARKET_ADDRESS"),
-                fetch_from_chain=True
+                market_address=os.getenv("MARKET_ADDRESS")
             )
         """
         import os
@@ -775,38 +765,14 @@ class ConfigManager:
                 f"Provide it as argument or set {ENV_MARKET_ADDRESS} environment variable."
             )
 
-        # If fetching from chain, delegate to existing function
-        if fetch_from_chain:
-            return market_config_from_market_address(
-                market_address=market_address,
-                rpc_url=rpc_url or DEFAULT_RPC_URL,
-                mm_entrypoint_address=mm_entrypoint_address or DEFAULT_MM_ENTRYPOINT_ADDRESS,
-                margin_contract_address=margin_contract_address or DEFAULT_MARGIN_CONTRACT_ADDRESS,
-                orderbook_implementation=orderbook_implementation or DEFAULT_ORDERBOOK_IMPLEMENTATION,
-                margin_account_implementation=margin_account_implementation or DEFAULT_MARGIN_ACCOUNT_IMPLEMENTATION,
-            )
-
-        # Otherwise, construct directly from provided kwargs
-        # (requires all MarketConfig fields)
-        if not kwargs:
-            raise KuruConfigError(
-                "Either set fetch_from_chain=True or provide all MarketConfig fields"
-            )
-
-        # Merge in any overrides
-        config_dict = {"market_address": market_address}
-        if mm_entrypoint_address:
-            config_dict["mm_entrypoint_address"] = mm_entrypoint_address
-        if margin_contract_address:
-            config_dict["margin_contract_address"] = margin_contract_address
-        if orderbook_implementation:
-            config_dict["orderbook_implementation"] = orderbook_implementation
-        if margin_account_implementation:
-            config_dict["margin_account_implementation"] = margin_account_implementation
-
-        config_dict.update(kwargs)
-
-        return MarketConfig(**config_dict)
+        return market_config_from_market_address(
+            market_address=market_address,
+            rpc_url=rpc_url or DEFAULT_RPC_URL,
+            mm_entrypoint_address=mm_entrypoint_address or DEFAULT_MM_ENTRYPOINT_ADDRESS,
+            margin_contract_address=margin_contract_address or DEFAULT_MARGIN_CONTRACT_ADDRESS,
+            orderbook_implementation=orderbook_implementation or DEFAULT_ORDERBOOK_IMPLEMENTATION,
+            margin_account_implementation=margin_account_implementation or DEFAULT_MARGIN_ACCOUNT_IMPLEMENTATION,
+        )
 
     @staticmethod
     def load_transaction_config(
@@ -1183,7 +1149,6 @@ class ConfigManager:
     @staticmethod
     def load_all_configs(
         market_address: Optional[str] = None,
-        fetch_from_chain: bool = True,
         auto_env: bool = True,
         toml_path: str = "config.toml",
         **overrides
@@ -1202,7 +1167,6 @@ class ConfigManager:
 
         Args:
             market_address: Market contract address
-            fetch_from_chain: Fetch market parameters from blockchain
             auto_env: Automatically load from environment variables
             **overrides: Override specific config parameters
 
@@ -1211,8 +1175,7 @@ class ConfigManager:
 
         Example:
             configs = ConfigManager.load_all_configs(
-                market_address="0x...",
-                fetch_from_chain=True
+                market_address="0x..."
             )
             client = await KuruClient.create(**configs)
         """
@@ -1222,7 +1185,6 @@ class ConfigManager:
             "connection_config": ConfigManager.load_connection_config(auto_env=auto_env, toml_config=toml_config),
             "market_config": ConfigManager.load_market_config(
                 market_address=market_address,
-                fetch_from_chain=fetch_from_chain,
                 auto_env=auto_env,
                 toml_config=toml_config,
             ),

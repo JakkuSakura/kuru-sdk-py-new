@@ -82,13 +82,12 @@ load_dotenv()
 
 configs = ConfigManager.load_all_configs(
     market_address=os.environ["MARKET_ADDRESS"],
-    fetch_from_chain=True,
 )
 
 client = await KuruClient.create(**configs)
 ```
 
-`fetch_from_chain=True` reads the market's on-chain params and sets `price_precision`, `size_precision`, `tick_size`, and token addresses/decimals/symbols automatically.
+`ConfigManager.load_all_configs()` reads the market's on-chain params and sets `price_precision`, `size_precision`, `tick_size`, and token addresses/decimals/symbols automatically.
 
 ### Step 2 - Fund margin
 
@@ -280,7 +279,7 @@ import asyncio
 from kuru_sdk_py.configs import ConfigManager
 from kuru_sdk_py.feed.orderbook_ws import KuruFrontendOrderbookClient, FrontendOrderbookUpdate
 
-market_config = ConfigManager.load_market_config(market_address="0x...", fetch_from_chain=True)
+market_config = ConfigManager.load_market_config(market_address="0x...")
 connection_config = ConfigManager.load_connection_config()
 
 update_queue: asyncio.Queue[FrontendOrderbookUpdate] = asyncio.Queue()
@@ -326,7 +325,7 @@ import asyncio
 from kuru_sdk_py.configs import ConfigManager
 from kuru_sdk_py.feed.exchange_ws import ExchangeWebsocketClient, DepthUpdate, MonadDepthUpdate
 
-market_config = ConfigManager.load_market_config(market_address="0x...", fetch_from_chain=True)
+market_config = ConfigManager.load_market_config(market_address="0x...")
 connection_config = ConfigManager.load_connection_config()
 
 update_queue = asyncio.Queue()
@@ -390,7 +389,6 @@ from kuru_sdk_py.configs import ConfigManager, ConfigPresets
 # One-liner: load everything from env vars
 configs = ConfigManager.load_all_configs(
     market_address=os.environ["MARKET_ADDRESS"],
-    fetch_from_chain=True,
 )
 client = await KuruClient.create(**configs)
 
