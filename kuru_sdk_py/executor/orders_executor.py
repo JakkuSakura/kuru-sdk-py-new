@@ -18,6 +18,7 @@ from kuru_sdk_py.manager.order import Order, OrderType, OrderSide
 from kuru_sdk_py.manager.orders_manager import OrdersManager
 from kuru_sdk_py.utils import load_abi
 from kuru_sdk_py.transaction.transaction import AsyncTransactionSenderMixin
+from kuru_sdk_py.transaction.transaction import LocalGasCounts
 from kuru_sdk_py.transaction.access_list import (
     build_access_list_for_cancel_only,
     build_access_list_for_cancel_and_place,
@@ -373,7 +374,16 @@ class OrdersExecutor(AsyncTransactionSenderMixin):
                 f"{len(buy_prices)} buys, {len(sell_prices)} sells"
             )
 
-        txhash = await self._send_transaction(function_call, access_list=access_list, gas_price=gas_price)
+        txhash = await self._send_transaction(
+            function_call,
+            access_list=access_list,
+            gas_price=gas_price,
+            local_gas_counts=LocalGasCounts(
+                n_buy=len(buy_prices),
+                n_sell=len(sell_prices),
+                n_cancel=len(order_ids_to_cancel),
+            ),
+        )
 
         return txhash
 
@@ -424,7 +434,12 @@ class OrdersExecutor(AsyncTransactionSenderMixin):
             logger.debug(f"Built access list for {len(order_ids)} order cancellations")
 
         # Send transaction (with or without access list)
-        txhash = await self._send_transaction(function_call, access_list=access_list, gas_price=gas_price)
+        txhash = await self._send_transaction(
+            function_call,
+            access_list=access_list,
+            gas_price=gas_price,
+            local_gas_counts=LocalGasCounts(n_cancel=len(order_ids)),
+        )
 
         # Wait for confirmation
         await self._wait_for_transaction_receipt(txhash)

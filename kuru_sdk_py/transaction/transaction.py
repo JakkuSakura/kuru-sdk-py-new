@@ -1,5 +1,6 @@
 """Mixin classes for transaction sending functionality."""
 
+from dataclasses import dataclass
 from loguru import logger
 from typing import Protocol, runtime_checkable, Optional
 from web3 import AsyncWeb3
@@ -14,6 +15,15 @@ from kuru_sdk_py.exceptions import (
 )
 from kuru_sdk_py.utils.errors import decode_contract_error, extract_error_selector
 from kuru_sdk_py.configs import TransactionConfig
+
+
+@dataclass(frozen=True)
+class LocalGasCounts:
+    """Batch operation counts used by the local gas estimation formula."""
+
+    n_buy: int = 0
+    n_sell: int = 0
+    n_cancel: int = 0
 
 
 @runtime_checkable
@@ -51,6 +61,7 @@ class AsyncTransactionSenderMixin:
         value: int = 0,
         access_list: Optional[list[dict]] = None,
         gas_price: Optional[int] = None,
+        local_gas_counts: Optional[LocalGasCounts] = None,
     ) -> str:
         """Build, sign, and send a transaction to the blockchain.
 
@@ -92,47 +103,66 @@ class AsyncTransactionSenderMixin:
             # Build transaction
             tx = await function_call.build_transaction(tx_params)
 
-            # Estimate gas
-            try:
-                estimated_gas = await self.w3.eth.estimate_gas(tx)
+            if (
+                self.transaction_config.local_gas_estimation
+                and local_gas_counts is not None
+            ):
+                tx["gas"] = (
+                    193_000
+                    + (159_000 * local_gas_counts.n_buy)
+                    + (160_000 * local_gas_counts.n_sell)
+                    + (44_000 * local_gas_counts.n_cancel)
+                )
+                logger.debug(
+                    "Using local gas estimation formula: "
+                    f"gas={tx['gas']} "
+                    f"(buy={local_gas_counts.n_buy}, "
+                    f"sell={local_gas_counts.n_sell}, "
+                    f"cancel={local_gas_counts.n_cancel})"
+                )
+            else:
+                # Estimate gas
+                try:
+                    estimated_gas = await self.w3.eth.estimate_gas(tx)
 
-                # Manually adjust gas when access list is provided
-                # RPC may overestimate gas per storage slot
-                if access_list:
-                    total_storage_slots = sum(
-                        len(entry.get("storageKeys", [])) for entry in access_list
-                    )
-                    # Use config for gas adjustment
-                    adjusted_gas = estimated_gas - (
-                        total_storage_slots
-                        * self.transaction_config.gas_adjustment_per_slot
-                    ) + self.transaction_config.gas_buffer
-                    final_gas = int(
-                        adjusted_gas * self.transaction_config.gas_buffer_multiplier
-                    )
-                    tx["gas"] = final_gas
-                else:
-                    tx["gas"] = int(estimated_gas)
-            except Exception as e:
-                # Try to decode contract error for better error message
-                decoded_error = decode_contract_error(e)
-                selector = extract_error_selector(e)
+                    # Manually adjust gas when access list is provided
+                    # RPC may overestimate gas per storage slot
+                    if access_list:
+                        total_storage_slots = sum(
+                            len(entry.get("storageKeys", [])) for entry in access_list
+                        )
+                        # Use config for gas adjustment
+                        adjusted_gas = estimated_gas - (
+                            total_storage_slots
+                            * self.transaction_config.gas_adjustment_per_slot
+                        ) + self.transaction_config.gas_buffer
+                        final_gas = int(
+                            adjusted_gas
+                            * self.transaction_config.gas_buffer_multiplier
+                        )
+                        tx["gas"] = final_gas
+                    else:
+                        tx["gas"] = int(estimated_gas)
+                except Exception as e:
+                    # Try to decode contract error for better error message
+                    decoded_error = decode_contract_error(e)
+                    selector = extract_error_selector(e)
 
-                if decoded_error:
-                    error_msg = f"Transaction would revert: {decoded_error}"
-                    logger.error(
-                        f"Gas estimation failed with contract error: {decoded_error}"
-                    )
-                    logger.debug(f"Original exception: {e}")
-                else:
-                    error_msg = f"Transaction would fail: {e}"
-                    logger.error(f"Gas estimation failed: {e}")
+                    if decoded_error:
+                        error_msg = f"Transaction would revert: {decoded_error}"
+                        logger.error(
+                            f"Gas estimation failed with contract error: {decoded_error}"
+                        )
+                        logger.debug(f"Original exception: {e}")
+                    else:
+                        error_msg = f"Transaction would fail: {e}"
+                        logger.error(f"Gas estimation failed: {e}")
 
-                raise KuruContractError(
-                    error_msg,
-                    revert_reason=decoded_error,
-                    selector=selector,
-                ) from e
+                    raise KuruContractError(
+                        error_msg,
+                        revert_reason=decoded_error,
+                        selector=selector,
+                    ) from e
 
             # Sign transaction
             signed_tx = self.account.sign_transaction(tx)

@@ -144,6 +144,20 @@ cause the subtraction to exceed the estimated gas. The buffer is applied
 before the gas_buffer_multiplier.
 """
 
+DEFAULT_LOCAL_GAS_ESTIMATION = False
+"""
+Whether to use the local batch gas estimation formula instead of eth_estimateGas
+
+When False:
+- Uses the current RPC gas estimation flow
+- Applies access-list gas slot adjustment when relevant
+
+When True:
+- Uses a fixed local formula for batch order and cancel flows
+- Skips RPC gas estimation for those flows
+- Does not apply access-list slot subtraction or additional gas buffers
+"""
+
 # ============================================================================
 # WEBSOCKET CONFIGURATION
 # ============================================================================

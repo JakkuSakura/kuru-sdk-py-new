@@ -44,6 +44,7 @@ def test_client_config_to_configs(monkeypatch):
     config = ClientConfig(
         market_address="0x0000000000000000000000000000000000000001",
         private_key="0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        local_gas_estimation=True,
     )
     (
         market_config,
@@ -58,6 +59,7 @@ def test_client_config_to_configs(monkeypatch):
     assert isinstance(connection_config, ConnectionConfig)
     assert isinstance(wallet_config, WalletConfig)
     assert isinstance(transaction_config, TransactionConfig)
+    assert transaction_config.local_gas_estimation is True
     assert isinstance(websocket_config, WebSocketConfig)
     assert isinstance(order_execution_config, OrderExecutionConfig)
     assert captured == {

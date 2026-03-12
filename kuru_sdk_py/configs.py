@@ -21,6 +21,7 @@ from kuru_sdk_py.config_defaults import (
     DEFAULT_GAS_ADJUSTMENT_PER_SLOT,
     DEFAULT_GAS_BUFFER_MULTIPLIER,
     DEFAULT_GAS_BUFFER,
+    DEFAULT_LOCAL_GAS_ESTIMATION,
     DEFAULT_MAX_RECONNECT_ATTEMPTS,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_HEARTBEAT_INTERVAL,
@@ -112,12 +113,14 @@ class TransactionConfig:
         gas_adjustment_per_slot: Gas to subtract per access list storage slot
         gas_buffer_multiplier: Safety buffer multiplier for gas estimates (e.g., 1.1 = 10% extra)
         gas_buffer: Fixed gas buffer added after access-list slot subtraction to prevent negative gas
+        local_gas_estimation: Use local formula-based gas for batch order/cancel flows
     """
     timeout: int = DEFAULT_TRANSACTION_TIMEOUT
     poll_latency: float = DEFAULT_POLL_LATENCY
     gas_adjustment_per_slot: int = DEFAULT_GAS_ADJUSTMENT_PER_SLOT
     gas_buffer_multiplier: float = DEFAULT_GAS_BUFFER_MULTIPLIER
     gas_buffer: int = DEFAULT_GAS_BUFFER
+    local_gas_estimation: bool = DEFAULT_LOCAL_GAS_ESTIMATION
 
 
 @dataclass
@@ -217,6 +220,7 @@ class ClientConfig:
     use_access_list: bool = DEFAULT_USE_ACCESS_LIST
     timeout: int = DEFAULT_TRANSACTION_TIMEOUT
     poll_latency: float = DEFAULT_POLL_LATENCY
+    local_gas_estimation: bool = DEFAULT_LOCAL_GAS_ESTIMATION
     max_reconnect_attempts: int = DEFAULT_MAX_RECONNECT_ATTEMPTS
     reconnect_delay: float = DEFAULT_RECONNECT_DELAY
     heartbeat_interval: float = DEFAULT_HEARTBEAT_INTERVAL
@@ -255,6 +259,7 @@ class ClientConfig:
         transaction_config = TransactionConfig(
             timeout=self.timeout,
             poll_latency=self.poll_latency,
+            local_gas_estimation=self.local_gas_estimation,
         )
         websocket_config = WebSocketConfig(
             max_reconnect_attempts=self.max_reconnect_attempts,
@@ -813,6 +818,7 @@ class ConfigManager:
         gas_adjustment_per_slot: Optional[int] = None,
         gas_buffer_multiplier: Optional[float] = None,
         gas_buffer: Optional[int] = None,
+        local_gas_estimation: Optional[bool] = None,
         auto_env: bool = True,
         toml_config: Optional[dict] = None,
     ) -> TransactionConfig:
@@ -827,6 +833,7 @@ class ConfigManager:
             gas_adjustment_per_slot: Gas to subtract per access list slot
             gas_buffer_multiplier: Safety buffer multiplier for gas estimates
             gas_buffer: Fixed gas buffer added after access-list slot subtraction
+            local_gas_estimation: Use local formula-based gas for batch order/cancel flows
             auto_env: Automatically load from environment variables
 
         Returns:
@@ -861,6 +868,10 @@ class ConfigManager:
                 config_dict["gas_buffer_multiplier"] = float(section["gas_buffer_multiplier"])
             if "gas_buffer" in section:
                 config_dict["gas_buffer"] = int(section["gas_buffer"])
+            if "local_gas_estimation" in section:
+                config_dict["local_gas_estimation"] = bool(
+                    section["local_gas_estimation"]
+                )
 
         # Load from environment
         if auto_env:
@@ -886,6 +897,8 @@ class ConfigManager:
             config_dict["gas_buffer_multiplier"] = gas_buffer_multiplier
         if gas_buffer is not None:
             config_dict["gas_buffer"] = gas_buffer
+        if local_gas_estimation is not None:
+            config_dict["local_gas_estimation"] = local_gas_estimation
 
         return TransactionConfig(**config_dict)
 

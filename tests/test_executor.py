@@ -11,6 +11,7 @@ from kuru_sdk_py.executor.orders_executor import (
     round_price_up,
 )
 from kuru_sdk_py.manager.order import Order, OrderSide, OrderType
+from kuru_sdk_py.transaction.transaction import LocalGasCounts
 
 
 def _make_executor() -> OrdersExecutor:
@@ -79,7 +80,12 @@ async def test_place_order_converts_decimal_and_rounds_prices(monkeypatch):
     assert captured_payload["sellPrices"] == [130]
     assert captured_payload["buySizes"] == [400]
     assert captured_payload["sellSizes"] == [600]
-    executor._send_transaction.assert_awaited_once_with(function_call, access_list=[], gas_price=None)
+    executor._send_transaction.assert_awaited_once_with(
+        function_call,
+        access_list=[],
+        gas_price=None,
+        local_gas_counts=LocalGasCounts(n_buy=1, n_sell=1, n_cancel=0),
+    )
 
 
 @pytest.mark.asyncio
@@ -102,6 +108,32 @@ async def test_place_order_validates_input_lengths():
             orders_to_cancel_metadata=[],
             post_only=True,
         )
+
+
+@pytest.mark.asyncio
+async def test_cancel_orders_passes_local_cancel_count(monkeypatch):
+    executor = _make_executor()
+    function_call = object()
+    executor.orderbook_contract = SimpleNamespace(
+        functions=SimpleNamespace(batchUpdate=lambda *args: function_call)
+    )
+    executor._wait_for_transaction_receipt = AsyncMock(return_value={})
+
+    monkeypatch.setattr(
+        "kuru_sdk_py.executor.orders_executor.build_access_list_for_cancel_only",
+        lambda **kwargs: [{"address": executor.order_book_address, "storageKeys": []}],
+    )
+
+    await executor.cancel_orders_with_kuru_order_ids(
+        [(11, 100, True), (12, 200, False)]
+    )
+
+    executor._send_transaction.assert_awaited_once_with(
+        function_call,
+        access_list=[{"address": executor.order_book_address, "storageKeys": []}],
+        gas_price=None,
+        local_gas_counts=LocalGasCounts(n_cancel=2),
+    )
 
 
 def test_batch_order_request_from_orders_sorts_and_groups():

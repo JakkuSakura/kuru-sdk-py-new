@@ -168,6 +168,22 @@ class TestLoadTomlConfig:
         assert config.auto_approve is True
         assert config.use_access_list is False
 
+    def test_transaction_config_defaults_local_gas_estimation_to_false(self):
+        config = ConfigManager.load_transaction_config(auto_env=False, toml_config={})
+        assert config.local_gas_estimation is False
+
+    def test_transaction_toml_loads_local_gas_estimation(self, tmp_path):
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_text('[transaction]\nlocal_gas_estimation = true\n')
+        toml_config = ConfigManager.load_toml_config(str(toml_file))
+
+        with patch.dict(os.environ, {}, clear=True):
+            config = ConfigManager.load_transaction_config(
+                auto_env=True, toml_config=toml_config
+            )
+
+        assert config.local_gas_estimation is True
+
 
 class TestLoadMarketConfig:
     def test_load_market_config_fetches_from_chain_with_resolved_inputs(self, monkeypatch):
