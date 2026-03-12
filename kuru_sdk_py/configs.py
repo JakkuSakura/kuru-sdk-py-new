@@ -25,6 +25,7 @@ from kuru_sdk_py.config_defaults import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_HEARTBEAT_INTERVAL,
     DEFAULT_HEARTBEAT_TIMEOUT,
+    DEFAULT_FRONTEND_NORMALIZE_PRICES_AND_SIZES,
     DEFAULT_RPC_LOGS_SUBSCRIPTION,
     DEFAULT_RPC_WS_MAX_RECONNECT_ATTEMPTS,
     DEFAULT_RPC_WS_RECONNECT_DELAY,
@@ -35,6 +36,7 @@ from kuru_sdk_py.config_defaults import (
     DEFAULT_AUTO_APPROVE,
     DEFAULT_USE_ACCESS_LIST,
     DEFAULT_EXCHANGE_MARKET_DEPTH,
+    DEFAULT_EXCHANGE_NORMALIZE_PRICES_AND_SIZES,
     DEFAULT_PENDING_TX_TTL,
     DEFAULT_TRADE_EVENTS_TTL,
     DEFAULT_CACHE_CHECK_INTERVAL,
@@ -142,6 +144,12 @@ class WebSocketConfig:
     heartbeat_interval: float = DEFAULT_HEARTBEAT_INTERVAL
     heartbeat_timeout: float = DEFAULT_HEARTBEAT_TIMEOUT
     exchange_market_depth: str = DEFAULT_EXCHANGE_MARKET_DEPTH
+    frontend_normalize_prices_and_sizes: bool = (
+        DEFAULT_FRONTEND_NORMALIZE_PRICES_AND_SIZES
+    )
+    exchange_normalize_prices_and_sizes: bool = (
+        DEFAULT_EXCHANGE_NORMALIZE_PRICES_AND_SIZES
+    )
     rpc_logs_subscription: str = DEFAULT_RPC_LOGS_SUBSCRIPTION
     rpc_ws_max_reconnect_attempts: int = DEFAULT_RPC_WS_MAX_RECONNECT_ATTEMPTS
     rpc_ws_reconnect_delay: float = DEFAULT_RPC_WS_RECONNECT_DELAY
@@ -214,6 +222,12 @@ class ClientConfig:
     heartbeat_interval: float = DEFAULT_HEARTBEAT_INTERVAL
     heartbeat_timeout: float = DEFAULT_HEARTBEAT_TIMEOUT
     exchange_market_depth: str = DEFAULT_EXCHANGE_MARKET_DEPTH
+    frontend_normalize_prices_and_sizes: bool = (
+        DEFAULT_FRONTEND_NORMALIZE_PRICES_AND_SIZES
+    )
+    exchange_normalize_prices_and_sizes: bool = (
+        DEFAULT_EXCHANGE_NORMALIZE_PRICES_AND_SIZES
+    )
 
     def to_configs(
         self,
@@ -248,6 +262,8 @@ class ClientConfig:
             heartbeat_interval=self.heartbeat_interval,
             heartbeat_timeout=self.heartbeat_timeout,
             exchange_market_depth=self.exchange_market_depth,
+            frontend_normalize_prices_and_sizes=self.frontend_normalize_prices_and_sizes,
+            exchange_normalize_prices_and_sizes=self.exchange_normalize_prices_and_sizes,
         )
         order_execution_config = OrderExecutionConfig(
             post_only=self.post_only,
@@ -274,6 +290,8 @@ class ClientConfig:
         from kuru_sdk_py.config_defaults import (
             ENV_AUTO_APPROVE,
             ENV_EXCHANGE_MARKET_DEPTH,
+            ENV_EXCHANGE_NORMALIZE_PRICES_AND_SIZES,
+            ENV_FRONTEND_NORMALIZE_PRICES_AND_SIZES,
             ENV_HEARTBEAT_INTERVAL,
             ENV_HEARTBEAT_TIMEOUT,
             ENV_MARKET_ADDRESS,
@@ -341,6 +359,20 @@ class ClientConfig:
             ),
             exchange_market_depth=os.getenv(
                 ENV_EXCHANGE_MARKET_DEPTH, DEFAULT_EXCHANGE_MARKET_DEPTH
+            ),
+            frontend_normalize_prices_and_sizes=validate_boolean_env(
+                os.getenv(
+                    ENV_FRONTEND_NORMALIZE_PRICES_AND_SIZES,
+                    str(DEFAULT_FRONTEND_NORMALIZE_PRICES_AND_SIZES),
+                ),
+                "frontend_normalize_prices_and_sizes",
+            ),
+            exchange_normalize_prices_and_sizes=validate_boolean_env(
+                os.getenv(
+                    ENV_EXCHANGE_NORMALIZE_PRICES_AND_SIZES,
+                    str(DEFAULT_EXCHANGE_NORMALIZE_PRICES_AND_SIZES),
+                ),
+                "exchange_normalize_prices_and_sizes",
             ),
         )
 
@@ -864,6 +896,8 @@ class ConfigManager:
         heartbeat_interval: Optional[float] = None,
         heartbeat_timeout: Optional[float] = None,
         exchange_market_depth: Optional[str] = None,
+        frontend_normalize_prices_and_sizes: Optional[bool] = None,
+        exchange_normalize_prices_and_sizes: Optional[bool] = None,
         rpc_logs_subscription: Optional[str] = None,
         rpc_ws_max_reconnect_attempts: Optional[int] = None,
         rpc_ws_reconnect_delay: Optional[float] = None,
@@ -906,11 +940,14 @@ class ConfigManager:
             ENV_MAX_RECONNECT_ATTEMPTS, ENV_RECONNECT_DELAY,
             ENV_HEARTBEAT_INTERVAL, ENV_HEARTBEAT_TIMEOUT,
             ENV_EXCHANGE_MARKET_DEPTH,
+            ENV_FRONTEND_NORMALIZE_PRICES_AND_SIZES,
+            ENV_EXCHANGE_NORMALIZE_PRICES_AND_SIZES,
             ENV_RPC_LOGS_SUBSCRIPTION,
             ENV_RPC_WS_MAX_RECONNECT_ATTEMPTS, ENV_RPC_WS_RECONNECT_DELAY,
             ENV_RPC_WS_MAX_RECONNECT_DELAY,
             ENV_GAP_RECOVERY_BLOCK_BUFFER, ENV_GAP_RECOVERY_MAX_BLOCK_RANGE,
         )
+        from kuru_sdk_py.utils.validation import validate_boolean_env
 
         config_dict = {}
 
@@ -925,6 +962,16 @@ class ConfigManager:
                 config_dict["heartbeat_interval"] = float(section["heartbeat_interval"])
             if "heartbeat_timeout" in section:
                 config_dict["heartbeat_timeout"] = float(section["heartbeat_timeout"])
+            if "exchange_market_depth" in section:
+                config_dict["exchange_market_depth"] = section["exchange_market_depth"]
+            if "frontend_normalize_prices_and_sizes" in section:
+                config_dict["frontend_normalize_prices_and_sizes"] = bool(
+                    section["frontend_normalize_prices_and_sizes"]
+                )
+            if "exchange_normalize_prices_and_sizes" in section:
+                config_dict["exchange_normalize_prices_and_sizes"] = bool(
+                    section["exchange_normalize_prices_and_sizes"]
+                )
             if "rpc_logs_subscription" in section:
                 config_dict["rpc_logs_subscription"] = section["rpc_logs_subscription"]
             if "rpc_ws_max_reconnect_attempts" in section:
@@ -950,6 +997,20 @@ class ConfigManager:
                 config_dict["heartbeat_timeout"] = float(env_timeout)
             if env_depth := os.getenv(ENV_EXCHANGE_MARKET_DEPTH):
                 config_dict["exchange_market_depth"] = env_depth
+            if env_frontend_normalize := os.getenv(
+                ENV_FRONTEND_NORMALIZE_PRICES_AND_SIZES
+            ):
+                config_dict["frontend_normalize_prices_and_sizes"] = validate_boolean_env(
+                    env_frontend_normalize,
+                    "frontend_normalize_prices_and_sizes",
+                )
+            if env_exchange_normalize := os.getenv(
+                ENV_EXCHANGE_NORMALIZE_PRICES_AND_SIZES
+            ):
+                config_dict["exchange_normalize_prices_and_sizes"] = validate_boolean_env(
+                    env_exchange_normalize,
+                    "exchange_normalize_prices_and_sizes",
+                )
             if env_sub := os.getenv(ENV_RPC_LOGS_SUBSCRIPTION):
                 env_sub = env_sub.strip()
                 if not env_sub:
@@ -979,6 +1040,14 @@ class ConfigManager:
             config_dict["heartbeat_timeout"] = heartbeat_timeout
         if exchange_market_depth is not None:
             config_dict["exchange_market_depth"] = exchange_market_depth
+        if frontend_normalize_prices_and_sizes is not None:
+            config_dict["frontend_normalize_prices_and_sizes"] = (
+                frontend_normalize_prices_and_sizes
+            )
+        if exchange_normalize_prices_and_sizes is not None:
+            config_dict["exchange_normalize_prices_and_sizes"] = (
+                exchange_normalize_prices_and_sizes
+            )
         if rpc_logs_subscription is not None:
             rpc_logs_subscription = rpc_logs_subscription.strip()
             if not rpc_logs_subscription:

@@ -12,6 +12,7 @@ from kuru_sdk_py.feed.base_ws import BaseWebSocketClient
 from kuru_sdk_py.utils.ws_utils import calculate_backoff_delay, format_reconnect_attempts
 
 PRICE_PRECISION_DECIMAL = Decimal(1_000_000_000_000_000_000)
+PriceSizeValue = Union[Decimal, int]
 
 # === DATACLASSES ===
 
@@ -21,7 +22,7 @@ class DepthUpdate:
     """
     Standard Binance-compatible depth update.
 
-    Prices and sizes are pre-normalized to human-readable floats.
+    Prices and sizes are either normalized Decimals or raw ints.
 
     Attributes:
         e: Event type ("depthUpdate")
@@ -29,8 +30,8 @@ class DepthUpdate:
         s: Symbol (market address)
         U: First update ID in event
         u: Final update ID in event
-        b: Bids as list of (price, size) float pairs
-        a: Asks as list of (price, size) float pairs
+        b: Bids as list of (price, size) pairs
+        a: Asks as list of (price, size) pairs
     """
 
     e: str  # Event type: "depthUpdate"
@@ -38,8 +39,8 @@ class DepthUpdate:
     s: str  # Symbol (market address)
     U: int  # First update ID
     u: int  # Final update ID
-    b: List[Tuple[Decimal, Decimal]]  # Bids: [(price, size), ...]
-    a: List[Tuple[Decimal, Decimal]]  # Asks: [(price, size), ...]
+    b: List[Tuple[PriceSizeValue, PriceSizeValue]]  # Bids: [(price, size), ...]
+    a: List[Tuple[PriceSizeValue, PriceSizeValue]]  # Asks: [(price, size), ...]
 
 
 @dataclass
@@ -47,7 +48,7 @@ class MonadDepthUpdate:
     """
     Monad-enhanced depth update with blockchain state.
 
-    Prices and sizes are pre-normalized to human-readable floats.
+    Prices and sizes are either normalized Decimals or raw ints.
 
     Attributes:
         e: Event type ("monadDepthUpdate")
@@ -58,8 +59,8 @@ class MonadDepthUpdate:
         blockId: Block hash (hex string with 0x prefix)
         U: First update ID in event
         u: Final update ID in event
-        b: Bids as list of (price, size) float pairs
-        a: Asks as list of (price, size) float pairs
+        b: Bids as list of (price, size) pairs
+        a: Asks as list of (price, size) pairs
     """
 
     e: str  # Event type: "monadDepthUpdate"
@@ -70,8 +71,8 @@ class MonadDepthUpdate:
     blockId: str  # Block hash
     U: int
     u: int
-    b: List[Tuple[Decimal, Decimal]]
-    a: List[Tuple[Decimal, Decimal]]
+    b: List[Tuple[PriceSizeValue, PriceSizeValue]]
+    a: List[Tuple[PriceSizeValue, PriceSizeValue]]
 
 
 # === MAIN CLIENT CLASS ===
@@ -126,6 +127,7 @@ class ExchangeWebsocketClient(BaseWebSocketClient):
         ws_url: str,
         market_config: MarketConfig,
         update_queue: asyncio.Queue[Union[DepthUpdate, MonadDepthUpdate]],
+        normalize_prices_and_sizes: Optional[bool] = None,
         websocket_config: Optional[WebSocketConfig] = None,
         on_error: Optional[Callable[[Exception], None]] = None,
     ) -> None:
@@ -136,6 +138,8 @@ class ExchangeWebsocketClient(BaseWebSocketClient):
             ws_url: Exchange WebSocket server URL
             market_config: MarketConfig containing market address and size precision
             update_queue: Queue to receive orderbook updates
+            normalize_prices_and_sizes: Override price/size normalization behavior.
+                            If None, uses websocket_config.exchange_normalize_prices_and_sizes
             websocket_config: WebSocket behavior configuration.
                             If None, uses default WebSocketConfig()
             on_error: Optional callback for errors (can be sync or async)
@@ -170,6 +174,11 @@ class ExchangeWebsocketClient(BaseWebSocketClient):
         self._market_address = market_config.market_address.lower()  # Normalize to lowercase
         self._update_queue = update_queue
         self._market_depth = websocket_config.exchange_market_depth
+        self._normalize_prices_and_sizes = (
+            websocket_config.exchange_normalize_prices_and_sizes
+            if normalize_prices_and_sizes is None
+            else normalize_prices_and_sizes
+        )
 
         logger.info(
             f"Initialized ExchangeWebsocketClient for market {self._market_address}"
@@ -215,6 +224,16 @@ class ExchangeWebsocketClient(BaseWebSocketClient):
             Decimal('1')
         """
         return Decimal(int(size_str)) / Decimal(size_precision)
+
+    def _format_price_for_queue(self, raw_price: int) -> PriceSizeValue:
+        if self._normalize_prices_and_sizes:
+            return Decimal(raw_price) / PRICE_PRECISION_DECIMAL
+        return raw_price
+
+    def _format_size_for_queue(self, raw_size: int) -> PriceSizeValue:
+        if self._normalize_prices_and_sizes:
+            return Decimal(raw_size) / Decimal(self._market_config.size_precision)
+        return raw_size
 
     async def subscribe(self) -> None:
         """
@@ -337,15 +356,15 @@ class ExchangeWebsocketClient(BaseWebSocketClient):
         """
         Handle standard depth update message.
 
-        Expected format:
+        Expected wire format:
         {
             "e": "depthUpdate",
             "E": 1234567890,  # Optional - may not be present
             "s": "0x...",
             "U": 100,
             "u": 150,
-            "b": [["241.47", "10.5"], ...],
-            "a": [["242.15", "8.3"], ...]
+            "b": [["241470000000000000000", "105000000000"], ...],
+            "a": [["242150000000000000000", "83000000000"], ...]
         }
 
         Args:
@@ -356,7 +375,6 @@ class ExchangeWebsocketClient(BaseWebSocketClient):
             import time
             event_time = int(data.get("E", int(time.time() * 1000)))
 
-            size_precision_decimal = Decimal(self._market_config.size_precision)
             update = DepthUpdate(
                 e=data["e"],
                 E=event_time,
@@ -364,11 +382,17 @@ class ExchangeWebsocketClient(BaseWebSocketClient):
                 U=int(data.get("U", 0)),  # Default to 0 if not provided
                 u=int(data.get("u", 0)),  # Default to 0 if not provided
                 b=[
-                    (Decimal(int(bid[0])) / PRICE_PRECISION_DECIMAL, Decimal(int(bid[1])) / size_precision_decimal)
+                    (
+                        self._format_price_for_queue(int(bid[0])),
+                        self._format_size_for_queue(int(bid[1])),
+                    )
                     for bid in data.get("b", [])
                 ],
                 a=[
-                    (Decimal(int(ask[0])) / PRICE_PRECISION_DECIMAL, Decimal(int(ask[1])) / size_precision_decimal)
+                    (
+                        self._format_price_for_queue(int(ask[0])),
+                        self._format_size_for_queue(int(ask[1])),
+                    )
                     for ask in data.get("a", [])
                 ],
             )
@@ -393,7 +417,7 @@ class ExchangeWebsocketClient(BaseWebSocketClient):
         """
         Handle Monad-enhanced depth update message.
 
-        Expected format:
+        Expected wire format:
         {
             "e": "monadDepthUpdate",
             "E": 1234567890,  # Optional
@@ -403,8 +427,8 @@ class ExchangeWebsocketClient(BaseWebSocketClient):
             "blockId": "0xabc...",
             "U": 100,
             "u": 150,
-            "b": [["241.47", "10.5"], ...],
-            "a": [["242.15", "8.3"], ...]
+            "b": [["241470000000000000000", "105000000000"], ...],
+            "a": [["242150000000000000000", "83000000000"], ...]
         }
 
         Args:
@@ -415,7 +439,6 @@ class ExchangeWebsocketClient(BaseWebSocketClient):
             import time
             event_time = int(data.get("E", int(time.time() * 1000)))
 
-            size_precision_decimal = Decimal(self._market_config.size_precision)
             update = MonadDepthUpdate(
                 e=data["e"],
                 E=event_time,
@@ -426,11 +449,17 @@ class ExchangeWebsocketClient(BaseWebSocketClient):
                 U=int(data.get("U", 0)),
                 u=int(data.get("u", 0)),
                 b=[
-                    (Decimal(int(bid[0])) / PRICE_PRECISION_DECIMAL, Decimal(int(bid[1])) / size_precision_decimal)
+                    (
+                        self._format_price_for_queue(int(bid[0])),
+                        self._format_size_for_queue(int(bid[1])),
+                    )
                     for bid in data.get("b", [])
                 ],
                 a=[
-                    (Decimal(int(ask[0])) / PRICE_PRECISION_DECIMAL, Decimal(int(ask[1])) / size_precision_decimal)
+                    (
+                        self._format_price_for_queue(int(ask[0])),
+                        self._format_size_for_queue(int(ask[1])),
+                    )
                     for ask in data.get("a", [])
                 ],
             )

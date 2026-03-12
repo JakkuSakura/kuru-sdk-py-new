@@ -6,6 +6,7 @@ from kuru_sdk_py.configs import (
     ConfigManager,
     MarketConfig,
     KuruMMConfig,
+    WebSocketConfig,
     initialize_kuru_mm_config,
     market_config_from_market_address,
 )
@@ -216,6 +217,54 @@ class TestLoadMarketConfig:
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(KuruConfigError, match="market_address is required"):
                 ConfigManager.load_market_config(auto_env=True, toml_config={})
+
+
+class TestLoadWebSocketConfig:
+    def test_defaults_enable_normalization(self):
+        config = ConfigManager.load_websocket_config(auto_env=False, toml_config={})
+
+        assert isinstance(config, WebSocketConfig)
+        assert config.frontend_normalize_prices_and_sizes is True
+        assert config.exchange_normalize_prices_and_sizes is True
+
+    def test_toml_loads_independent_normalization_flags(self, tmp_path):
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_text(
+            "[websocket]\n"
+            "frontend_normalize_prices_and_sizes = false\n"
+            "exchange_normalize_prices_and_sizes = true\n"
+        )
+        toml_config = ConfigManager.load_toml_config(str(toml_file))
+
+        config = ConfigManager.load_websocket_config(auto_env=False, toml_config=toml_config)
+
+        assert config.frontend_normalize_prices_and_sizes is False
+        assert config.exchange_normalize_prices_and_sizes is True
+
+    def test_env_overrides_toml_for_normalization_flags(self, tmp_path):
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_text(
+            "[websocket]\n"
+            "frontend_normalize_prices_and_sizes = false\n"
+            "exchange_normalize_prices_and_sizes = false\n"
+        )
+        toml_config = ConfigManager.load_toml_config(str(toml_file))
+
+        with patch.dict(
+            os.environ,
+            {
+                "KURU_FRONTEND_NORMALIZE_PRICES_AND_SIZES": "true",
+                "KURU_EXCHANGE_NORMALIZE_PRICES_AND_SIZES": "true",
+            },
+            clear=True,
+        ):
+            config = ConfigManager.load_websocket_config(
+                auto_env=True,
+                toml_config=toml_config,
+            )
+
+        assert config.frontend_normalize_prices_and_sizes is True
+        assert config.exchange_normalize_prices_and_sizes is True
 
 
 class TestLoadAllConfigs:

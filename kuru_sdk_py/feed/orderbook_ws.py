@@ -2,7 +2,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import websockets.asyncio.client
 from loguru import logger
@@ -22,6 +22,7 @@ WEBSOCKET_PRICE_PRECISION = (
     1_000_000_000_000_000_000  # 10^18 - prices always in wei-like format
 )
 WEBSOCKET_PRICE_PRECISION_DECIMAL = Decimal(WEBSOCKET_PRICE_PRECISION)
+PriceSizeValue = Union[Decimal, int]
 
 
 # === DATACLASSES ===
@@ -80,15 +81,15 @@ class SubscriptionResponse:
 class FrontendEvent:
     """Individual orderbook event.
 
-    Prices (p) and sizes (s) are pre-normalized to human-readable floats.
+    Prices (p) and sizes (s) are either normalized Decimals or raw ints.
     """
 
     e: str  # Event type (e.g., "Trade", "OrderCreated", etc.)
     ts: int  # Timestamp
     mad: str  # Market address
     th: Optional[str] = None  # Transaction hash
-    p: Optional[Decimal] = None  # Price (human-readable Decimal)
-    s: Optional[Decimal] = None  # Size (human-readable Decimal)
+    p: Optional[PriceSizeValue] = None  # Price
+    s: Optional[PriceSizeValue] = None  # Size
     ib: Optional[bool] = None  # Is buy
     t: Optional[str] = None  # Taker address
     m: Optional[str] = None  # Maker address
@@ -98,14 +99,14 @@ class FrontendEvent:
 class FrontendOrderbookUpdate:
     """Incremental orderbook update.
 
-    Prices and sizes in bids/asks are pre-normalized to human-readable floats.
+    Prices and sizes in bids/asks are either normalized Decimals or raw ints.
     """
 
     events: List[FrontendEvent]
-    b: Optional[List[Tuple[Decimal, Decimal]]] = (
+    b: Optional[List[Tuple[PriceSizeValue, PriceSizeValue]]] = (
         None  # Bids: [(price, size), ...]
     )
-    a: Optional[List[Tuple[Decimal, Decimal]]] = (
+    a: Optional[List[Tuple[PriceSizeValue, PriceSizeValue]]] = (
         None  # Asks: [(price, size), ...]
     )
     v: Optional[VaultParams] = None  # Updated vault params
@@ -140,6 +141,7 @@ class KuruFrontendOrderbookClient(BaseWebSocketClient):
         market_address: str,
         update_queue: asyncio.Queue[FrontendOrderbookUpdate],
         size_precision: int = 1,
+        normalize_prices_and_sizes: Optional[bool] = None,
         websocket_config: Optional[WebSocketConfig] = None,
         on_error: Optional[Callable[[Exception], None]] = None,
     ) -> None:
@@ -151,6 +153,8 @@ class KuruFrontendOrderbookClient(BaseWebSocketClient):
             market_address: Market contract address
             update_queue: Queue to receive orderbook updates
             size_precision: Market's size precision divisor for normalizing sizes
+            normalize_prices_and_sizes: Override price/size normalization behavior.
+                            If None, uses websocket_config.frontend_normalize_prices_and_sizes
             websocket_config: WebSocket behavior configuration.
                             If None, uses default WebSocketConfig()
             on_error: Optional callback for errors
@@ -184,6 +188,11 @@ class KuruFrontendOrderbookClient(BaseWebSocketClient):
         self._market_address = market_address.lower()  # Normalize to lowercase
         self._update_queue = update_queue
         self._size_precision = size_precision
+        self._normalize_prices_and_sizes = (
+            websocket_config.frontend_normalize_prices_and_sizes
+            if normalize_prices_and_sizes is None
+            else normalize_prices_and_sizes
+        )
         self._initial_snapshot_received = False
 
     @staticmethod
@@ -226,6 +235,16 @@ class KuruFrontendOrderbookClient(BaseWebSocketClient):
         if size_precision == 0:
             return Decimal(raw_size)
         return Decimal(raw_size) / Decimal(size_precision)
+
+    def _format_price_for_queue(self, raw_price: int) -> PriceSizeValue:
+        if self._normalize_prices_and_sizes:
+            return self.format_websocket_price(raw_price)
+        return raw_price
+
+    def _format_size_for_queue(self, raw_size: int) -> PriceSizeValue:
+        if self._normalize_prices_and_sizes:
+            return self.format_websocket_size(raw_size, self._size_precision)
+        return raw_size
 
     async def subscribe(self) -> None:
         """
@@ -344,19 +363,18 @@ class KuruFrontendOrderbookClient(BaseWebSocketClient):
             data: FrontendOrderbookData dict
         """
         try:
-            # Parse bids and asks, normalizing to human-readable Decimals
-            size_precision_decimal = Decimal(self._size_precision)
+            # Parse bids and asks, normalizing only when configured.
             bids = [
                 (
-                    Decimal(self._parse_big_int(bid[0])) / WEBSOCKET_PRICE_PRECISION_DECIMAL,
-                    Decimal(self._parse_big_int(bid[1])) / size_precision_decimal,
+                    self._format_price_for_queue(self._parse_big_int(bid[0])),
+                    self._format_size_for_queue(self._parse_big_int(bid[1])),
                 )
                 for bid in data.get("b", [])
             ]
             asks = [
                 (
-                    Decimal(self._parse_big_int(ask[0])) / WEBSOCKET_PRICE_PRECISION_DECIMAL,
-                    Decimal(self._parse_big_int(ask[1])) / size_precision_decimal,
+                    self._format_price_for_queue(self._parse_big_int(ask[0])),
+                    self._format_size_for_queue(self._parse_big_int(ask[1])),
                 )
                 for ask in data.get("a", [])
             ]
@@ -395,14 +413,13 @@ class KuruFrontendOrderbookClient(BaseWebSocketClient):
                 for event_data in data["events"]:
                     events.append(self._parse_frontend_event(event_data))
 
-            # Parse optional fields, normalizing to human-readable Decimals
-            size_precision_decimal = Decimal(self._size_precision)
+            # Parse optional fields, normalizing only when configured.
             bids = None
             if "b" in data and data["b"]:
                 bids = [
                     (
-                        Decimal(self._parse_big_int(bid[0])) / WEBSOCKET_PRICE_PRECISION_DECIMAL,
-                        Decimal(self._parse_big_int(bid[1])) / size_precision_decimal,
+                        self._format_price_for_queue(self._parse_big_int(bid[0])),
+                        self._format_size_for_queue(self._parse_big_int(bid[1])),
                     )
                     for bid in data["b"]
                 ]
@@ -411,8 +428,8 @@ class KuruFrontendOrderbookClient(BaseWebSocketClient):
             if "a" in data and data["a"]:
                 asks = [
                     (
-                        Decimal(self._parse_big_int(ask[0])) / WEBSOCKET_PRICE_PRECISION_DECIMAL,
-                        Decimal(self._parse_big_int(ask[1])) / size_precision_decimal,
+                        self._format_price_for_queue(self._parse_big_int(ask[0])),
+                        self._format_size_for_queue(self._parse_big_int(ask[1])),
                     )
                     for ask in data["a"]
                 ]
@@ -553,12 +570,12 @@ class KuruFrontendOrderbookClient(BaseWebSocketClient):
             mad=data["mad"],  # Required
             th=data.get("th"),
             p=(
-                Decimal(self._parse_big_int(data["p"])) / WEBSOCKET_PRICE_PRECISION_DECIMAL
+                self._format_price_for_queue(self._parse_big_int(data["p"]))
                 if "p" in data and data["p"] is not None
                 else None
             ),
             s=(
-                Decimal(self._parse_big_int(data["s"])) / Decimal(self._size_precision)
+                self._format_size_for_queue(self._parse_big_int(data["s"]))
                 if "s" in data and data["s"] is not None
                 else None
             ),

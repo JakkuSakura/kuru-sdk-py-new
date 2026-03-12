@@ -257,6 +257,22 @@ Default "depth" subscribes to the full depth stream. Change to e.g. "depth20"
 to subscribe to a top-20 depth stream if supported by the server.
 """
 
+DEFAULT_FRONTEND_NORMALIZE_PRICES_AND_SIZES = True
+"""
+Whether the frontend orderbook WebSocket should normalize prices and sizes.
+
+When True, queue/callback payloads use human-readable Decimal values.
+When False, payloads carry raw parsed integer values from the wire format.
+"""
+
+DEFAULT_EXCHANGE_NORMALIZE_PRICES_AND_SIZES = True
+"""
+Whether the exchange WebSocket should normalize prices and sizes.
+
+When True, queue/callback payloads use human-readable Decimal values.
+When False, payloads carry raw parsed integer values from the wire format.
+"""
+
 # ============================================================================
 # RPC WEBSOCKET SUBSCRIPTION DEFAULTS
 # ============================================================================
@@ -551,6 +567,12 @@ ENV_HEARTBEAT_TIMEOUT = "KURU_HEARTBEAT_TIMEOUT"
 
 ENV_EXCHANGE_MARKET_DEPTH = "EXCHANGE_MARKET_DEPTH"
 """Environment variable for Exchange WebSocket depth channel suffix (e.g. "depth", "depth20")"""
+
+ENV_FRONTEND_NORMALIZE_PRICES_AND_SIZES = "KURU_FRONTEND_NORMALIZE_PRICES_AND_SIZES"
+"""Environment variable for frontend WS price/size normalization"""
+
+ENV_EXCHANGE_NORMALIZE_PRICES_AND_SIZES = "KURU_EXCHANGE_NORMALIZE_PRICES_AND_SIZES"
+"""Environment variable for exchange WS price/size normalization"""
 
 ENV_RPC_LOGS_SUBSCRIPTION = "KURU_RPC_LOGS_SUBSCRIPTION"
 """

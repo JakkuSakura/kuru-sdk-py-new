@@ -14,7 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from kuru_sdk_py.configs import MarketConfig
+from kuru_sdk_py.configs import MarketConfig, WebSocketConfig
+from kuru_sdk_py.feed.exchange_ws import ExchangeWebsocketClient, MonadDepthUpdate
 from kuru_sdk_py.manager.order import Order as SdkOrder
 from kuru_sdk_py.manager.order import OrderSide as SdkOrderSide
 from kuru_sdk_py.manager.order import OrderStatus as SdkOrderStatus
@@ -389,6 +390,164 @@ class TestWebSocketFormatting:
         raw = 1_000_000_000_000_000  # 0.001
         price = KuruFrontendOrderbookClient.format_websocket_price(raw)
         assert price == Decimal("0.001")
+
+    def test_exchange_format_price(self):
+        raw = "241470000000000000000"
+        price = ExchangeWebsocketClient.format_price(raw)
+        assert price == Decimal("241.47")
+
+    def test_exchange_format_size(self):
+        raw = "100000000000"
+        size = ExchangeWebsocketClient.format_size(raw, 10_000_000_000)
+        assert size == Decimal("10")
+
+
+class TestFrontendWebSocketNormalizationToggle:
+    @pytest.mark.asyncio
+    async def test_snapshot_normalizes_by_default(self):
+        update_queue = asyncio.Queue()
+        client = KuruFrontendOrderbookClient(
+            ws_url="ws://example.local/ws",
+            market_address="0x0000000000000000000000000000000000000001",
+            update_queue=update_queue,
+            size_precision=10_000_000_000,
+        )
+
+        await client._handle_initial_snapshot(
+            {
+                "b": [["241470000000000000000", "100000000000"]],
+                "a": [["242150000000000000000", "83000000000"]],
+            }
+        )
+        update = await update_queue.get()
+
+        assert update.b == [(Decimal("241.47"), Decimal("10"))]
+        assert update.a == [(Decimal("242.15"), Decimal("8.3"))]
+
+    @pytest.mark.asyncio
+    async def test_snapshot_uses_raw_ints_when_disabled_via_config(self):
+        update_queue = asyncio.Queue()
+        client = KuruFrontendOrderbookClient(
+            ws_url="ws://example.local/ws",
+            market_address="0x0000000000000000000000000000000000000001",
+            update_queue=update_queue,
+            size_precision=10_000_000_000,
+            websocket_config=WebSocketConfig(
+                frontend_normalize_prices_and_sizes=False
+            ),
+        )
+
+        await client._handle_initial_snapshot(
+            {
+                "b": [["241470000000000000000", "100000000000"]],
+                "a": [["242150000000000000000", "83000000000"]],
+            }
+        )
+        update = await update_queue.get()
+
+        assert update.b == [(241470000000000000000, 100000000000)]
+        assert update.a == [(242150000000000000000, 83000000000)]
+
+    def test_event_uses_constructor_override_over_config(self):
+        client = KuruFrontendOrderbookClient(
+            ws_url="ws://example.local/ws",
+            market_address="0x0000000000000000000000000000000000000001",
+            update_queue=asyncio.Queue(),
+            size_precision=10_000_000_000,
+            normalize_prices_and_sizes=True,
+            websocket_config=WebSocketConfig(
+                frontend_normalize_prices_and_sizes=False
+            ),
+        )
+
+        event = client._parse_frontend_event(
+            {
+                "e": "Trade",
+                "ts": 1000,
+                "mad": "0xabc",
+                "p": "241470000000000000000",
+                "s": "100000000000",
+            }
+        )
+
+        assert event.p == Decimal("241.47")
+        assert event.s == Decimal("10")
+
+
+class TestExchangeWebSocketNormalizationToggle:
+    @pytest.mark.asyncio
+    async def test_depth_update_normalizes_by_default(self):
+        update_queue = asyncio.Queue()
+        client = ExchangeWebsocketClient(
+            ws_url="ws://example.local/ws",
+            market_config=make_market_config(),
+            update_queue=update_queue,
+        )
+
+        await client._handle_depth_update(
+            {
+                "e": "depthUpdate",
+                "b": [["241470000000000000000", "100000000000"]],
+                "a": [["242150000000000000000", "83000000000"]],
+            }
+        )
+        update = await update_queue.get()
+
+        assert update.b == [(Decimal("241.47"), Decimal("10"))]
+        assert update.a == [(Decimal("242.15"), Decimal("8.3"))]
+
+    @pytest.mark.asyncio
+    async def test_monad_depth_update_uses_raw_ints_when_disabled_via_config(self):
+        update_queue = asyncio.Queue()
+        client = ExchangeWebsocketClient(
+            ws_url="ws://example.local/ws",
+            market_config=make_market_config(),
+            update_queue=update_queue,
+            websocket_config=WebSocketConfig(
+                exchange_normalize_prices_and_sizes=False
+            ),
+        )
+
+        await client._handle_monad_depth_update(
+            {
+                "e": "monadDepthUpdate",
+                "state": "committed",
+                "blockNumber": 123,
+                "blockId": "0xabc",
+                "b": [["241470000000000000000", "100000000000"]],
+                "a": [["242150000000000000000", "83000000000"]],
+            }
+        )
+        update = await update_queue.get()
+
+        assert isinstance(update, MonadDepthUpdate)
+        assert update.b == [(241470000000000000000, 100000000000)]
+        assert update.a == [(242150000000000000000, 83000000000)]
+
+    @pytest.mark.asyncio
+    async def test_depth_update_uses_constructor_override_over_config(self):
+        update_queue = asyncio.Queue()
+        client = ExchangeWebsocketClient(
+            ws_url="ws://example.local/ws",
+            market_config=make_market_config(),
+            update_queue=update_queue,
+            normalize_prices_and_sizes=False,
+            websocket_config=WebSocketConfig(
+                exchange_normalize_prices_and_sizes=True
+            ),
+        )
+
+        await client._handle_depth_update(
+            {
+                "e": "depthUpdate",
+                "b": [["241470000000000000000", "100000000000"]],
+                "a": [["242150000000000000000", "83000000000"]],
+            }
+        )
+        update = await update_queue.get()
+
+        assert update.b == [(241470000000000000000, 100000000000)]
+        assert update.a == [(242150000000000000000, 83000000000)]
 
 
 # ============================================================================
