@@ -144,7 +144,7 @@ cause the subtraction to exceed the estimated gas. The buffer is applied
 before the gas_buffer_multiplier.
 """
 
-DEFAULT_LOCAL_GAS_ESTIMATION = False
+DEFAULT_LOCAL_GAS_ESTIMATION = True
 """
 Whether to use the local batch gas estimation formula instead of eth_estimateGas
 

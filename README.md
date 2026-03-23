@@ -130,8 +130,10 @@ Alternatively, read from `client.orders_manager.processed_orders_queue` instead 
 ```python
 from kuru_sdk_py.feed.orderbook_ws import KuruFrontendOrderbookClient, FrontendOrderbookUpdate
 
-best_bid: float | None = None
-best_ask: float | None = None
+from decimal import Decimal
+
+best_bid: Decimal | None = None
+best_ask: Decimal | None = None
 
 async def on_orderbook(update: FrontendOrderbookUpdate) -> None:
     global best_bid, best_ask
@@ -144,7 +146,7 @@ client.set_orderbook_callback(on_orderbook)
 await client.subscribe_to_orderbook()
 ```
 
-**WebSocket price/size units:** Prices and sizes in `FrontendOrderbookUpdate` are pre-normalized to human-readable floats. No manual conversion is needed.
+**WebSocket price/size units:** Prices and sizes in `FrontendOrderbookUpdate` are pre-normalized to human-readable `Decimal` values. No manual conversion is needed.
 
 ### Step 5 - Cancel and place quotes
 
@@ -271,7 +273,7 @@ The SDK provides two standalone WebSocket clients for real-time orderbook data. 
 
 Connects to Kuru's frontend orderbook WebSocket. Delivers a **full L2 snapshot** on connect, then incremental updates with events (trades, order placements, cancellations).
 
-- Prices and sizes are pre-normalized to human-readable floats.
+- Prices and sizes are pre-normalized to human-readable `Decimal` values.
 - Each update may contain `b` (bids) and `a` (asks) with all current levels at that price, plus an `events` list describing what changed.
 
 ```python
@@ -296,9 +298,9 @@ async with client:
         update = await update_queue.get()
 
         if update.b:
-            best_bid = update.b[0][0]  # Already a float
+            best_bid = update.b[0][0]  # Already a Decimal
         if update.a:
-            best_ask = update.a[0][0]  # Already a float
+            best_ask = update.a[0][0]  # Already a Decimal
 ```
 
 You can also subscribe via `KuruClient` instead of using the client directly:
@@ -315,7 +317,7 @@ await client.subscribe_to_orderbook()
 Connects to the exchange WebSocket in **Binance-compatible format**. Delivers incremental depth updates (`depthUpdate`) and optionally Monad-enhanced updates with blockchain state (`monadDepthUpdate`).
 
 - Messages are binary (JSON serialized to bytes).
-- Prices and sizes are pre-normalized to human-readable floats.
+- Prices and sizes are pre-normalized to human-readable `Decimal` values.
 - `MonadDepthUpdate` includes `blockNumber`, `blockId`, and `state` (`"proposed"` | `"committed"` | `"finalized"`).
 
 **Key difference from `orderbook_ws`:** The exchange WebSocket sends **incremental delta updates only** — `b` and `a` contain only the price levels that changed, not the full book. A size of `0.0` means that level was removed. You must maintain a local orderbook and apply each delta.
@@ -343,7 +345,7 @@ async with client:
     while True:
         update = await update_queue.get()
 
-        # Apply bid deltas (prices and sizes are pre-normalized floats)
+        # Apply bid deltas (prices and sizes are pre-normalized Decimals)
         for price, size in update.b:
             if size == 0.0:
                 orderbook["bids"].pop(price, None)  # Level removed
@@ -413,10 +415,38 @@ Batch cancel/replace every second is expensive on-chain. Common approaches:
 - Use fewer levels or smaller grids
 - Enable EIP-2930 access list optimization (`KURU_USE_ACCESS_LIST=true`)
 
-If you see **"out of gas" or "gas too low" transaction failures**, increase the gas buffer multiplier:
+### Gas estimation
+
+By default, the SDK estimates gas **locally** using a per-order heuristic, avoiding an extra `eth_estimateGas` RPC round-trip on every transaction:
+
+```
+gas = 193_000 + (159_000 × n_buys) + (160_000 × n_sells) + (44_000 × n_cancels)
+```
+
+These constants were calibrated empirically against the MM Entrypoint contract. The formula works well for typical batch sizes, but it may under- or over-estimate for unusual order compositions.
+
+If you experience **"out of gas" or gas limit issues**, fall back to RPC-based estimation by disabling local estimation (and the access list, which triggers a separate adjustment path):
+
+```python
+from kuru_sdk_py.configs import ConfigManager
+
+transaction_config = ConfigManager.load_transaction_config(
+    local_gas_estimation=False,
+    use_access_list=False,
+)
+```
+
+Or via environment variables:
 
 ```bash
-KURU_GAS_BUFFER_MULTIPLIER=1.3  # default is 1.2; try 1.3 to 1.5
+KURU_LOCAL_GAS_ESTIMATION=false
+KURU_USE_ACCESS_LIST=false
+```
+
+With RPC estimation you can also tune the gas buffer multiplier:
+
+```bash
+KURU_GAS_BUFFER_MULTIPLIER=1.5  # default is 1.35; try 1.5 to 2.0
 ```
 
 ### Safety checks
@@ -452,3 +482,40 @@ uv run pytest tests/ -v
 
 - Python >= 3.10
 - Dependencies managed via uv (see `pyproject.toml`)
+
+## Historic L2 Order Book Data
+
+Kuru publishes daily snapshots of the full L2 order book for all markets as Parquet files on S3. No credentials required.
+
+**Bucket:** `s3://kuru-l2-snapshots/l2-snapshots/`
+**Base HTTPS URL:** `https://kuru-l2-snapshots.s3.amazonaws.com/l2-snapshots/`
+
+### File Layout
+
+```
+l2-snapshots/
+  {market}/
+    {market}_{YYYY-MM-DD}.parquet
+```
+
+Each file contains all order book snapshots for a single market over one UTC calendar day.
+
+**Example:**
+```
+l2-snapshots/0xf39c4fd5465ea2dd7b0756cebc48a258b34febf3/0xf39c4fd5465ea2dd7b0756cebc48a258b34febf3_2025-11-24.parquet
+```
+
+### Schema
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | string | Unique snapshot ID |
+| `market` | string | Market contract address (lowercase) |
+| `blockNumber` | int64 | Block number of the snapshot |
+| `timestamp` | int64 | Block timestamp (Unix epoch seconds, UTC) |
+| `bids` | string | JSON array of bid price levels |
+| `asks` | string | JSON array of ask price levels |
+| `bidCount` | int32 | Number of bid levels |
+| `askCount` | int32 | Number of ask levels |
+
+Rows are ordered by `blockNumber` ascending within each file.
