@@ -131,11 +131,12 @@ class AsyncTransactionSenderMixin:
                         total_storage_slots = sum(
                             len(entry.get("storageKeys", [])) for entry in access_list
                         )
+                        effective_storage_slots = int(total_storage_slots * 0.6)
                         # Use config for gas adjustment
                         adjusted_gas = estimated_gas - (
-                            total_storage_slots
+                            effective_storage_slots
                             * self.transaction_config.gas_adjustment_per_slot
-                        ) + self.transaction_config.gas_buffer
+                        )
                         final_gas = int(
                             adjusted_gas
                             * self.transaction_config.gas_buffer_multiplier
