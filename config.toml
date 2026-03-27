@@ -20,8 +20,8 @@ timeout = 120
 poll_latency = 0.4
 gas_adjustment_per_slot = 6500
 gas_buffer_multiplier = 1.35
-gas_buffer = 40000
-local_gas_estimation = true
+gas_buffer = 30000
+local_gas_estimation = false
 
 [websocket]
 max_reconnect_attempts = 5
