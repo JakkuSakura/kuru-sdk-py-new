@@ -1,21 +1,18 @@
 """
-Example: Cancel Orders with Access List Comparison
+Example: Access List Comparison (no execution)
 
 This example demonstrates:
 - Fetching active orders from the Kuru API
 - Building manual access lists using build_access_list_for_cancel_only()
 - Fetching RPC-generated access lists using eth_createAccessList
 - Comparing gas estimates for 3 scenarios: manual AL, RPC AL, no AL
-- Executing transaction with chosen access list mode
+- Printing the full RPC-generated tx and no-access-list tx for comparison
 - Saving comparison data to JSON for analysis
 
 Usage:
-    python examples/cancel_orders.py --mode manual   # Use manual access list (default)
-    python examples/cancel_orders.py --mode rpc      # Use RPC access list
-    python examples/cancel_orders.py --mode none     # Use no access list
+    PYTHONPATH=. uv run python examples/test_access_list.py
 """
 
-import argparse
 import asyncio
 import json
 import os
@@ -46,19 +43,7 @@ async def print_order_callback(order: Order):
 
 
 async def main():
-    """Main function that tests different access list scenarios."""
-
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description="Cancel orders with different access list scenarios"
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["manual", "rpc", "none"],
-        default="manual",
-        help="Access list mode: manual (default), rpc, or none",
-    )
-    args = parser.parse_args()
+    """Main function that compares access list scenarios without executing."""
 
     # Load environment variables
     load_dotenv()
@@ -244,10 +229,14 @@ async def main():
                         "accessList": rpc_access_list,
                     }
                 )
-                print("tx_rpc_call: ", tx_rpc)
                 gas_rpc = await client.executor.w3.eth.estimate_gas(tx_rpc)
                 gas_estimates["rpc"] = gas_rpc
                 logger.info(f"✅ RPC access list:      {gas_rpc:,} gas")
+                logger.info("\n" + "=" * 80)
+                logger.info("RPC ACCESS LIST TX:")
+                logger.info("=" * 80)
+                print(json.dumps({k: v for k, v in tx_rpc.items() if k != "data"}, indent=2, default=str))
+                logger.info(f"data (truncated): {tx_rpc.get('data', '')[:120]}...")
             except Exception as e:
                 logger.error(f"❌ RPC access list estimation failed: {e}")
                 gas_estimates["rpc"] = None
@@ -262,10 +251,14 @@ async def main():
                     "value": 0,
                 }
             )
-            print("tx_no_access_list", tx_none)
             gas_none = await client.executor.w3.eth.estimate_gas(tx_none)
             gas_estimates["none"] = gas_none
             logger.info(f"✅ No access list:       {gas_none:,} gas")
+            logger.info("\n" + "=" * 80)
+            logger.info("NO ACCESS LIST TX:")
+            logger.info("=" * 80)
+            print(json.dumps({k: v for k, v in tx_none.items() if k != "data"}, indent=2, default=str))
+            logger.info(f"data (truncated): {tx_none.get('data', '')[:120]}...")
         except Exception as e:
             logger.error(f"❌ No access list estimation failed: {e}")
             gas_estimates["none"] = None
@@ -333,8 +326,7 @@ async def main():
         # === STEP 8: Save to JSON file ===
         comparison_data = {
             "timestamp": datetime.now().isoformat(),
-            "execution_mode": args.mode,
-            "orders_cancelled": order_ids,
+            "order_ids": order_ids,
             "manually_built_access_list": manual_access_list,
             "rpc_generated_access_list": rpc_access_list,
             "statistics": statistics,
@@ -345,52 +337,7 @@ async def main():
             json.dump(comparison_data, f, indent=2)
         logger.success(f"Access lists comparison saved to {json_file_path}")
 
-        # === STEP 9: Execute transaction with chosen mode ===
-        logger.info("\n" + "=" * 80)
-        logger.info(f"EXECUTING TRANSACTION WITH MODE: {args.mode.upper()}")
-        logger.info("=" * 80)
-
-        # Select access list based on mode
-        if args.mode == "manual":
-            chosen_access_list = manual_access_list
-            logger.info("Using MANUAL access list")
-        elif args.mode == "rpc":
-            chosen_access_list = rpc_access_list
-            logger.info("Using RPC access list")
-        else:  # none
-            chosen_access_list = None
-            logger.info("Using NO access list")
-
-        # Execute transaction
-        txhash = await client.executor._send_transaction(
-            function_call, access_list=chosen_access_list
-        )
-        logger.success(f"Transaction sent: {txhash}")
-
-        # Wait for confirmation
-        logger.info("Waiting for transaction confirmation...")
-        receipt = await client.executor._wait_for_transaction_receipt(txhash)
-        actual_gas_used = receipt["gasUsed"]
-        logger.success(f"Transaction confirmed: {txhash}")
-        logger.success(f"Actual gas used: {actual_gas_used:,}")
-
-        # Compare estimated vs actual
-        estimated_gas = gas_estimates.get(args.mode)
-        if estimated_gas:
-            gas_diff = actual_gas_used - estimated_gas
-            logger.info(
-                f"Estimated: {estimated_gas:,}, Actual: {actual_gas_used:,}, Diff: {gas_diff:,}"
-            )
-
-        # === STEP 10: Update JSON with transaction data ===
-        comparison_data["transaction_hash"] = txhash
-        comparison_data["actual_gas_used"] = int(actual_gas_used)
-        comparison_data["estimated_gas"] = int(estimated_gas) if estimated_gas else None
-        with open(json_file_path, "w") as f:
-            json.dump(comparison_data, f, indent=2)
-        logger.success(f"Updated {json_file_path} with transaction data")
-
-        logger.success("All active orders cancelled successfully!")
+        logger.success("Access list comparison complete (no orders were cancelled)")
 
     except KeyboardInterrupt:
         logger.info("Shutting down...")

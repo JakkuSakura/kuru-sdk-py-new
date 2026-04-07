@@ -168,9 +168,9 @@ class TestLoadTomlConfig:
         assert config.auto_approve is True
         assert config.use_access_list is False
 
-    def test_transaction_config_defaults_local_gas_estimation_to_false(self):
+    def test_transaction_config_defaults_local_gas_estimation_to_true(self):
         config = ConfigManager.load_transaction_config(auto_env=False, toml_config={})
-        assert config.local_gas_estimation is False
+        assert config.local_gas_estimation is True
 
     def test_transaction_toml_loads_local_gas_estimation(self, tmp_path):
         toml_file = tmp_path / "config.toml"

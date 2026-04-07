@@ -123,26 +123,28 @@ class AsyncTransactionSenderMixin:
             else:
                 # Estimate gas
                 try:
-                    estimated_gas = await self.w3.eth.estimate_gas(tx)
+                    estimated_gas = await self.w3.eth.estimate_gas(tx,block_identifier="latest")
 
                     # Manually adjust gas when access list is provided
                     # RPC may overestimate gas per storage slot
-                    if access_list:
-                        total_storage_slots = sum(
-                            len(entry.get("storageKeys", [])) for entry in access_list
-                        )
-                        # Use config for gas adjustment
-                        adjusted_gas = estimated_gas - (
-                            total_storage_slots
-                            * self.transaction_config.gas_adjustment_per_slot
-                        ) + self.transaction_config.gas_buffer
-                        final_gas = int(
-                            adjusted_gas
-                            * self.transaction_config.gas_buffer_multiplier
-                        )
-                        tx["gas"] = final_gas
-                    else:
-                        tx["gas"] = int(estimated_gas)
+                    # if access_list:
+                    #     total_storage_slots = sum(
+                    #         len(entry.get("storageKeys", [])) for entry in access_list
+                    #     )
+                    #     # effective_storage_slots = int(total_storage_slots * 0.6)
+                    #     # # Use config for gas adjustment
+                    #     # adjusted_gas = estimated_gas - (
+                    #     #     effective_storage_slots
+                    #     #     * self.transaction_config.gas_adjustment_per_slot
+                    #     # )
+                    #     # final_gas = int(
+                    #     #     adjusted_gas
+                    #     #     * self.transaction_config.gas_buffer_multiplier
+                    #     # )
+                    # logger.info(f"Estimated gas: {estimated_gas}, using: {tx['gas']}")
+                    tx["gas"] =  int(estimated_gas) + self.transaction_config.gas_buffer
+                    # else:
+                    #     tx["gas"] = int(estimated_gas) 
                 except Exception as e:
                     # Try to decode contract error for better error message
                     decoded_error = decode_contract_error(e)
